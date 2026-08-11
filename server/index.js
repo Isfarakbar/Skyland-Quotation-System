@@ -20,6 +20,18 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Ensure DB is connected before processing API requests (Essential for Vercel Serverless)
+app.use('/api', async (req, res, next) => {
+  try {
+    await connectDB();
+    await seedMongoDB();
+    next();
+  } catch (error) {
+    console.error('Database connection middleware error:', error);
+    res.status(500).json({ error: 'Database connection error: ' + error.message });
+  }
+});
+
 // API Routes
 app.use('/api/products', productsRouter);
 app.use('/api/customers', customersRouter);
@@ -36,21 +48,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Start Server & Connect MongoDB
-async function startServer() {
-  try {
-    await connectDB();
-    await seedMongoDB();
-    if (process.env.NODE_ENV !== 'production') {
-      app.listen(PORT, () => {
-        console.log(`🚀 Express API Server running on http://localhost:${PORT}`);
-      });
-    }
-  } catch (error) {
-    console.error('Failed to start server:', error);
-  }
+// Start Server in local dev environment
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Express API Server running on http://localhost:${PORT}`);
+  });
 }
-
-startServer();
 
 export default app;
