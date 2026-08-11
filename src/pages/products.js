@@ -2,7 +2,8 @@
 // SKYLAND ENERGY — Products Page
 // ============================================
 import { getAllProducts, addProduct, updateProduct, deleteProduct } from '../db/database.js';
-import { formatCurrency, CATEGORY_LABELS, matchesSearch, compressImage, debounce } from '../utils/helpers.js';
+import { formatCurrency, CATEGORY_LABELS, matchesSearch, debounce, escapeHtml } from '../utils/helpers.js';
+import { hasRole, uploadImage } from '../auth.js';
 import { createIcon } from '../components/icons.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { showConfirm } from '../components/confirm-dialog.js';
@@ -26,9 +27,9 @@ export async function renderProducts() {
         </div>
       </div>
       <div class="page-header-right">
-        <button class="btn btn-primary" id="add-product-btn">
+        ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-primary" id="add-product-btn">
           ${createIcon('plus')} Add Product
-        </button>
+        </button>` : ''}
       </div>
     </div>
 
@@ -38,7 +39,7 @@ export async function renderProducts() {
         <div class="page-toolbar-left">
           <div class="search-input-wrapper">
             ${createIcon('search')}
-            <input type="text" class="search-input" placeholder="Search products..." id="product-search" value="${searchQuery}" />
+            <input type="text" class="search-input" placeholder="Search products..." id="product-search" value="${escapeHtml(searchQuery)}" />
           </div>
           <div class="tab-filters" id="category-filters">
             <button class="tab-filter ${currentCategory === 'all' ? 'active' : ''}" data-cat="all">All</button>
@@ -100,29 +101,29 @@ function renderProductGrid(products) {
   }
 
   return filtered.map(p => `
-    <div class="card card-elevated product-card animate-fade-in" data-id="${p.id}">
+    <div class="card card-elevated product-card animate-fade-in" data-id="${escapeHtml(p.id)}">
       ${p.image ? `
         <div class="product-card-image">
-          <img src="${p.image}" alt="${p.name}" loading="lazy" />
+          <img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.name)}" loading="lazy" />
         </div>
       ` : `
         <div class="product-card-image-placeholder">
           ${createIcon(p.category === 'solar-panel' ? 'solar-panel' : p.category === 'battery' ? 'battery' : 'package', 40)}
         </div>
       `}
-      <span class="badge badge-category">${CATEGORY_LABELS[p.category] || p.category}</span>
-      <h4 class="product-card-name">${p.name}</h4>
-      <p class="product-card-brand">${p.brand || ''}${p.capacity ? ` — ${p.capacity}${p.capacityUnit || ''}` : ''}</p>
+      <span class="badge badge-category">${escapeHtml(CATEGORY_LABELS[p.category] || p.category)}</span>
+      <h4 class="product-card-name">${escapeHtml(p.name)}</h4>
+      <p class="product-card-brand">${escapeHtml(p.brand || '')}${p.capacity ? ` — ${escapeHtml(p.capacity)}${escapeHtml(p.capacityUnit || '')}` : ''}</p>
       <div class="product-card-footer">
         <span class="product-card-price">${formatCurrency(p.unitPrice)}</span>
-        <div class="product-card-actions">
+        ${hasRole('super_admin', 'admin', 'manager') ? `<div class="product-card-actions">
           <button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-id="${p.id}" data-tooltip="Edit">
             ${createIcon('edit')}
           </button>
-          <button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${p.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
+          ${hasRole('super_admin', 'admin') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${p.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
             ${createIcon('trash')}
-          </button>
-        </div>
+          </button>` : ''}
+        </div>` : ''}
       </div>
     </div>
   `).join('');
@@ -139,7 +140,7 @@ function bindCardActions(container) {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const products = await getAllProducts();
-      const product = products.find(p => p.id === parseInt(btn.dataset.id));
+      const product = products.find(p => String(p.id) === btn.dataset.id);
       if (product) openProductForm(product);
     });
   });
@@ -153,9 +154,8 @@ function bindCardActions(container) {
         confirmText: 'Delete Product',
       });
       if (confirmed) {
-        await deleteProduct(parseInt(btn.dataset.id));
-        toast.success('Product deleted successfully');
-        renderProducts();
+        try { await deleteProduct(btn.dataset.id); toast.success('Product deleted successfully'); renderProducts(); }
+        catch (error) { toast.error(error.message); }
       }
     });
   });
@@ -169,19 +169,19 @@ function openProductForm(existingProduct = null) {
   formEl.innerHTML = `
     <form id="product-form" autocomplete="off">
       <div class="image-upload-zone ${p.image ? 'has-image' : ''}" id="image-zone">
-        ${p.image ? `<img src="${p.image}" alt="Product" />` : `
+        ${p.image ? `<img src="${escapeHtml(p.image)}" alt="Product" />` : `
           <div class="image-upload-icon">${createIcon('upload', 32)}</div>
           <p class="image-upload-text">Click or drag to upload image</p>
           <p class="image-upload-hint">JPEG, PNG, WebP — Max 2MB</p>
         `}
         <input type="file" accept="image/*" id="product-image-input" />
       </div>
-      <input type="hidden" id="product-image-data" value="${p.image || ''}" />
+      <input type="hidden" id="product-image-data" value="${escapeHtml(p.image || '')}" />
 
       <div style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1.5rem;">
         <div class="form-group">
           <label class="form-label">Product Name <span class="required">*</span></label>
-          <input type="text" class="form-input" id="product-name" value="${p.name || ''}" placeholder="e.g., Jinko Tiger Neo 725W" required />
+          <input type="text" class="form-input" id="product-name" value="${escapeHtml(p.name || '')}" placeholder="e.g., Jinko Tiger Neo 725W" required />
         </div>
 
         <div class="form-row">
@@ -199,19 +199,19 @@ function openProductForm(existingProduct = null) {
           </div>
           <div class="form-group">
             <label class="form-label">Brand</label>
-            <input type="text" class="form-input" id="product-brand" value="${p.brand || ''}" placeholder="e.g., Jinko, Huawei" />
+            <input type="text" class="form-input" id="product-brand" value="${escapeHtml(p.brand || '')}" placeholder="e.g., Jinko, Huawei" />
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Model</label>
-            <input type="text" class="form-input" id="product-model" value="${p.model || ''}" placeholder="e.g., Tiger Neo" />
+            <input type="text" class="form-input" id="product-model" value="${escapeHtml(p.model || '')}" placeholder="e.g., Tiger Neo" />
           </div>
           <div class="form-group">
             <label class="form-label">Capacity</label>
             <div style="display: flex; gap: 0.5rem;">
-              <input type="text" class="form-input" id="product-capacity" value="${p.capacity || ''}" placeholder="e.g., 725" style="flex: 1;" />
+              <input type="text" class="form-input" id="product-capacity" value="${escapeHtml(p.capacity || '')}" placeholder="e.g., 725" style="flex: 1;" />
               <select class="form-select" id="product-capacity-unit" style="width: 80px;">
                 <option value="W" ${p.capacityUnit === 'W' ? 'selected' : ''}>W</option>
                 <option value="kW" ${p.capacityUnit === 'kW' ? 'selected' : ''}>kW</option>
@@ -273,10 +273,10 @@ function openProductForm(existingProduct = null) {
       return;
     }
     try {
-      const compressed = await compressImage(file, 600, 0.8);
-      imageDataInput.value = compressed;
+      const uploaded = await uploadImage(file, 'products');
+      imageDataInput.value = uploaded.url;
       imageZone.classList.add('has-image');
-      imageZone.innerHTML = `<img src="${compressed}" alt="Product" /><input type="file" accept="image/*" id="product-image-input" />`;
+      imageZone.innerHTML = `<img src="${escapeHtml(uploaded.url)}" alt="Product" /><input type="file" accept="image/*" id="product-image-input" />`;
       imageZone.querySelector('input')?.addEventListener('change', handleImageChange);
     } catch (err) {
       toast.error('Failed to process image');

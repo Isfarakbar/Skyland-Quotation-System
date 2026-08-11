@@ -58,12 +58,13 @@ export function timeAgo(dateStr) {
   return `${months}mo ago`;
 }
 
-// Generate quotation number: XX-SLE-YYMMDD-NNN
-export function generateQuotationNumber(customerName = '', count = 1) {
+// Generate a human-readable quotation number with second-level uniqueness.
+export function generateQuotationNumber(customerName = '') {
   const initials = customerName
     .split(' ')
-    .filter(w => w.length > 0)
-    .map(w => w[0].toUpperCase())
+    .map(word => word.replace(/[^A-Za-z0-9]/g, ''))
+    .filter(Boolean)
+    .map(word => word[0].toUpperCase())
     .slice(0, 2)
     .join('');
   const prefix = initials || 'XX';
@@ -71,7 +72,10 @@ export function generateQuotationNumber(customerName = '', count = 1) {
   const yy = String(now.getFullYear()).slice(2);
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
-  return `${prefix}-SLE-${yy}${mm}${dd}`;
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  const sec = String(now.getSeconds()).padStart(2, '0');
+  return `${prefix}-SLE-${yy}${mm}${dd}-${hh}${min}${sec}`;
 }
 
 // Get customer initials for avatar

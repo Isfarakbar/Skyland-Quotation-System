@@ -14,6 +14,8 @@ const productSchema = new mongoose.Schema(
     inverterType: { type: String, default: '' },
     image: { type: String, default: '' },
     specifications: { type: mongoose.Schema.Types.Mixed, default: {} },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   {
     timestamps: true,

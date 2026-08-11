@@ -145,8 +145,8 @@ export async function renderRates() {
     input.addEventListener('input', () => {
       const ppw = parseFloat(input.value) || 0;
       const row = input.closest('tr');
-      const id = parseInt(input.dataset.id);
-      const product = products.find(p => p.id === id);
+      const id = input.dataset.id;
+      const product = products.find(p => String(p.id) === id);
       if (product && product.capacity) {
         const unitPrice = Math.round(ppw * parseInt(product.capacity));
         const unitPriceInput = row.querySelector('input[data-field="unitPrice"]');
@@ -161,7 +161,7 @@ export async function renderRates() {
     const updates = {};
 
     inputs.forEach(input => {
-      const id = parseInt(input.dataset.id);
+      const id = input.dataset.id;
       const field = input.dataset.field;
       const value = parseFloat(input.value) || 0;
 
@@ -171,7 +171,7 @@ export async function renderRates() {
 
     try {
       for (const [id, data] of Object.entries(updates)) {
-        await updateProduct(parseInt(id), data);
+        await updateProduct(id, data);
       }
       toast.success(`Updated ${Object.keys(updates).length} products`);
     } catch (err) {

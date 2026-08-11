@@ -607,10 +607,14 @@ export const DEFAULT_TERMS = [
 ];
 
 export const DEFAULT_SETTINGS = {
-  companyName: 'Skyland Energy',
-  companyAddress: 'Lahore, Pakistan',
-  companyPhone: '',
-  companyEmail: '',
+  companyName: 'Skyland Energy (Pvt.) Ltd',
+  companyAddress: '286 H-1, Johar Town, Lahore, Pakistan',
+  companyPhone: '+92 42 32353019',
+  companyWhatsapp: '+92 310 8134361',
+  companyEmail: 'info@theskylandenergy.com',
+  companyWebsite: 'https://www.theskylandenergy.com',
+  companyTagline: 'Your Energy Management Company',
+  companyCredentials: 'AEDB & PEC Approved',
   validityDays: 5,
   advancePercent: 20,
   exchangeRate: 285,

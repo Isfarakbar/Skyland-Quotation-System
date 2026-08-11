@@ -164,6 +164,13 @@ Skyland Quotation System/
    ```env
    MONGODB_URI=your_mongodb_atlas_connection_string
    BREVO_API_KEY=your_brevo_api_key
+   APP_URL=http://localhost:5173
+   JWT_SECRET=generate_a_random_secret_of_at_least_32_characters
+   SUPER_ADMIN_EMAIL=admin@skylandenergy.pk
+   SUPER_ADMIN_PASSWORD=use_a_unique_strong_password
+   CLOUDINARY_CLOUD_NAME=your_cloud_name
+   CLOUDINARY_API_KEY=your_numeric_api_key
+   CLOUDINARY_API_SECRET=your_api_secret
    PORT=5000
    ```
 
@@ -171,7 +178,7 @@ Skyland Quotation System/
    ```bash
    npm run dev
    ```
-   - **Frontend UI**: `http://localhost:3000`
+   - **Frontend UI**: `http://localhost:5173`
    - **Express API**: `http://localhost:5000`
 
 ---
@@ -183,10 +190,22 @@ Skyland Quotation System/
 This repository is pre-configured with `vercel.json` and `api/index.js` for zero-configuration Vercel deployment:
 
 1. Import the repository into [Vercel](https://vercel.com).
-2. Add Environment Variables in Vercel project settings:
-   - `MONGODB_URI`
-   - `BREVO_API_KEY`
-3. Click **Deploy**.
+2. Add every required value from `.env.example` in Vercel project settings. Production startup validates MongoDB, `APP_URL`, `JWT_SECRET`, Brevo, and all three Cloudinary credentials. Initial super-admin values are needed only for the first bootstrap.
+3. Click **Deploy**, sign in with the bootstrap super-admin account, and approve manager/employee requests from **Team Access**.
+4. After the first super-admin is created, remove `SUPER_ADMIN_PASSWORD` from Vercel and redeploy. Never expose `JWT_SECRET`, `CLOUDINARY_API_SECRET`, MongoDB credentials, or Brevo credentials to Vite/client environment variables.
+
+The application has four roles: `super_admin`, `admin`, `manager`, and `employee`. Public signup only permits manager and employee requests; neither can sign in until the super admin approves the registration.
+
+### Verification
+
+Run the complete production build, isolated MongoDB integration suite, server syntax checks, and dependency audit before deployment:
+
+```bash
+npm run check
+npm audit --omit=dev
+```
+
+The integration suite verifies registration approval, role permissions, settings boundaries, server-side quotation totals, employee ownership, duplicate references, and linked-record deletion protection.
 
 ---
 

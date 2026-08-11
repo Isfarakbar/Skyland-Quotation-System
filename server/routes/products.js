@@ -1,5 +1,6 @@
 import express from 'express';
 import { Product } from '../models/Product.js';
+import { allowRoles } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -25,9 +26,9 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST create product
-router.post('/', async (req, res) => {
+router.post('/', allowRoles('super_admin', 'admin', 'manager'), async (req, res) => {
   try {
-    const product = new Product(req.body);
+    const product = new Product({ ...req.body, createdBy: req.user.id, updatedBy: req.user.id });
     await product.save();
     res.status(201).json(product);
   } catch (error) {
@@ -36,10 +37,11 @@ router.post('/', async (req, res) => {
 });
 
 // PUT update product
-router.put('/:id', async (req, res) => {
+router.put('/:id', allowRoles('super_admin', 'admin', 'manager'), async (req, res) => {
   try {
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
+    const { createdBy: _createdBy, updatedBy: _updatedBy, ...updates } = req.body;
+    const product = await Product.findByIdAndUpdate(req.params.id, { ...updates, updatedBy: req.user.id }, {
+      returnDocument: 'after',
       runValidators: true,
     });
     if (!product) return res.status(404).json({ error: 'Product not found' });
@@ -50,7 +52,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE product
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', allowRoles('super_admin', 'admin'), async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) return res.status(404).json({ error: 'Product not found' });

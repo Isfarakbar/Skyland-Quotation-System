@@ -10,7 +10,6 @@ import { toast } from '../components/toast.js';
 import { navigate } from '../router.js';
 import { toggleMobileSidebar } from '../components/sidebar.js';
 import { sendQuotationWhatsApp } from '../utils/whatsapp.js';
-import { generateQuotationPDF } from '../utils/pdf-generator.js';
 
 let state = {
   step: 1,
@@ -31,8 +30,8 @@ let state = {
 
 export async function renderQuotationBuilder(params) {
   // Check if editing an existing quotation
-  if (params && !isNaN(params)) {
-    const q = await getQuotation(parseInt(params));
+  if (params && !params.startsWith('customer-')) {
+    const q = await getQuotation(params);
     if (q) {
       const customer = await getCustomer(q.customerId);
       state = {
@@ -45,7 +44,7 @@ export async function renderQuotationBuilder(params) {
         validityDays: q.validityDays || 5,
         items: q.items || [],
         discount: q.discount || 0,
-        discountType: q.discountType || 'percent',
+        discountType: q.discountType === 'flat' ? 'fixed' : (q.discountType || 'percent'),
         exchangeRate: q.exchangeRate || 285,
         terms: q.termsAndConditions || DEFAULT_TERMS,
         notes: q.notes || '',
@@ -54,7 +53,7 @@ export async function renderQuotationBuilder(params) {
     }
   } else if (params && params.startsWith('customer-')) {
     // Pre-select customer
-    const custId = parseInt(params.replace('customer-', ''));
+    const custId = params.replace('customer-', '');
     const customer = await getCustomer(custId);
     if (customer) {
       resetState();
@@ -62,7 +61,7 @@ export async function renderQuotationBuilder(params) {
       state.customerName = customer.name;
       state.step = 2;
     }
-  } else if (!state.editingId) {
+  } else if (!params || !state.editingId) {
     // Fresh quotation — check if there's a customer id passed
     if (params && !isNaN(parseInt(params))) {
       // Could be a customer pre-select from customer page
@@ -110,7 +109,7 @@ function renderStep() {
         <button class="mobile-menu-toggle" id="mobile-menu-btn">${createIcon('menu')}</button>
         <div>
           <h1 class="page-title">${state.editingId ? 'Edit Quotation' : 'New Quotation'}</h1>
-          <p class="page-subtitle">${state.quotationNumber || 'Build a quotation step by step'}</p>
+          <p class="page-subtitle">${escapeHtml(state.quotationNumber || 'Build a quotation step by step')}</p>
         </div>
       </div>
     </div>
@@ -173,12 +172,12 @@ async function renderStep1(body) {
 
       <div id="customer-list" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 400px; overflow-y: auto;">
         ${customers.map(c => `
-          <div class="card ${state.customerId === c.id ? 'selected-customer' : ''}" style="cursor: pointer; padding: 1rem; ${state.customerId === c.id ? 'border-color: var(--color-accent); background: rgba(250,76,10,0.06);' : ''}" data-cust-id="${c.id}">
+          <div class="card ${state.customerId === c.id ? 'selected-customer' : ''}" style="cursor: pointer; padding: 1rem; ${state.customerId === c.id ? 'border-color: var(--color-accent); background: rgba(250,76,10,0.06);' : ''}" data-cust-id="${escapeHtml(c.id)}">
             <div class="customer-name-cell">
-              <div class="customer-avatar">${getInitials(c.name)}</div>
+              <div class="customer-avatar">${escapeHtml(getInitials(c.name))}</div>
               <div>
-                <strong>${c.name}</strong>
-                <div class="text-sm text-secondary">${c.phone} • ${c.city}</div>
+                <strong>${escapeHtml(c.name)}</strong>
+                <div class="text-sm text-secondary">${escapeHtml(c.phone)} • ${escapeHtml(c.city)}</div>
               </div>
             </div>
           </div>
@@ -209,8 +208,8 @@ async function renderStep1(body) {
   // Customer selection
   body.querySelectorAll('[data-cust-id]').forEach(card => {
     card.addEventListener('click', () => {
-      const id = parseInt(card.dataset.custId);
-      const cust = customers.find(c => c.id === id);
+      const id = card.dataset.custId;
+      const cust = customers.find(c => String(c.id) === id);
       state.customerId = id;
       state.customerName = cust.name;
       state.quotationNumber = generateQuotationNumber(cust.name);
@@ -276,7 +275,7 @@ async function renderStep2(body) {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Quotation Reference</label>
-            <input type="text" class="form-input" id="quote-ref" value="${state.quotationNumber}" placeholder="Auto-generated" />
+            <input type="text" class="form-input" id="quote-ref" value="${escapeHtml(state.quotationNumber)}" placeholder="Auto-generated" pattern="[A-Za-z0-9][A-Za-z0-9-]{2,79}" maxlength="80" />
           </div>
           <div class="form-group">
             <label class="form-label">Validity (Days)</label>
@@ -369,7 +368,7 @@ async function renderStep3(body) {
                       <option value="">— Pick —</option>
                       ${products
                         .filter(p => !item.category || p.category === item.category || item.category === 'service')
-                        .map(p => `<option value="${p.id}" ${item.productId === p.id ? 'selected' : ''}>${p.brand} ${p.model || ''} — ${formatCurrency(p.unitPrice)}</option>`)
+                        .map(p => `<option value="${escapeHtml(p.id)}" ${item.productId === p.id ? 'selected' : ''}>${escapeHtml(p.brand)} ${escapeHtml(p.model || '')} — ${formatCurrency(p.unitPrice)}</option>`)
                         .join('')}
                     </select>
                   </td>
@@ -415,8 +414,8 @@ async function renderStep3(body) {
         const field = input.dataset.field;
 
         if (field === 'productSelect') {
-          const prodId = parseInt(input.value);
-          const product = products.find(p => p.id === prodId);
+          const prodId = input.value;
+          const product = products.find(p => String(p.id) === prodId);
           if (product) {
             state.items[idx].productId = product.id;
             state.items[idx].unitPrice = product.unitPrice;
@@ -493,7 +492,7 @@ async function renderStep4(body) {
               <input type="number" class="form-input" id="discount-value" value="${state.discount}" min="0" />
               <select class="form-select" id="discount-type" style="width: 80px;">
                 <option value="percent" ${state.discountType === 'percent' ? 'selected' : ''}>%</option>
-                <option value="flat" ${state.discountType === 'flat' ? 'selected' : ''}>PKR</option>
+                <option value="fixed" ${state.discountType === 'fixed' ? 'selected' : ''}>PKR</option>
               </select>
             </div>
           </div>
@@ -510,7 +509,7 @@ async function renderStep4(body) {
 
       <div class="form-group" style="margin-bottom: 1.5rem;">
         <label class="form-label">Notes</label>
-        <textarea class="form-textarea" id="quote-notes" placeholder="Any additional notes for this quotation...">${state.notes}</textarea>
+        <textarea class="form-textarea" id="quote-notes" placeholder="Any additional notes for this quotation...">${escapeHtml(state.notes)}</textarea>
       </div>
 
       <div class="form-group">
@@ -527,7 +526,7 @@ async function renderStep4(body) {
 
   // Live pricing update
   ['discount-value', 'discount-type', 'exchange-rate'].forEach(id => {
-    body.querySelector(`#${id}`)?.addEventListener('change', () => {
+    body.querySelector(`#${id}`)?.addEventListener('input', () => {
       state.discount = parseFloat(document.getElementById('discount-value').value) || 0;
       state.discountType = document.getElementById('discount-type').value;
       state.exchangeRate = parseFloat(document.getElementById('exchange-rate').value) || 285;
@@ -582,6 +581,20 @@ async function renderStep5(body) {
   let discountAmount = state.discountType === 'percent' ? subtotal * (state.discount / 100) : state.discount;
   const grandTotal = subtotal - discountAmount;
   const systemLabel = SYSTEM_TYPES[state.systemType] || 'On-Grid';
+  const [companyName, companyAddress, companyPhone, companyWhatsapp, companyEmail, companyWebsite, companyTagline, companyCredentials] = await Promise.all([
+    getSetting('companyName'), getSetting('companyAddress'), getSetting('companyPhone'), getSetting('companyWhatsapp'),
+    getSetting('companyEmail'), getSetting('companyWebsite'), getSetting('companyTagline'), getSetting('companyCredentials'),
+  ]);
+  const company = {
+    name: companyName || 'Skyland Energy (Pvt.) Ltd',
+    address: companyAddress || '286 H-1, Johar Town, Lahore, Pakistan',
+    phone: companyPhone || '+92 42 32353019',
+    whatsapp: companyWhatsapp || '+92 310 8134361',
+    email: companyEmail || 'info@theskylandenergy.com',
+    website: companyWebsite || 'https://www.theskylandenergy.com',
+    tagline: companyTagline || 'Your Energy Management Company',
+    credentials: companyCredentials || 'AEDB & PEC Approved',
+  };
 
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -610,10 +623,17 @@ async function renderStep5(body) {
       <!-- Preview Document -->
       <div class="quotation-preview" id="quotation-preview">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
-          <img src="/Skyland Recreated Logo.svg" alt="Skyland Energy" style="height: 60px;" />
-          <div style="text-align: right; color: #666; font-size: 0.85rem;">
+          <div>
+            <img src="/Skyland Recreated Logo.svg" alt="Skyland Energy" style="height: 60px;" />
+            <div style="margin-top: 6px; color: #073d72; font-size: 0.72rem; font-weight: 700;">${escapeHtml(company.tagline)} · ${escapeHtml(company.credentials)}</div>
+          </div>
+          <div style="text-align: right; color: #555; font-size: 0.75rem; line-height: 1.55; max-width: 310px;">
+            <strong style="color: #073d72;">${escapeHtml(company.name)}</strong><br>
+            ${escapeHtml(company.address)}<br>
+            ${escapeHtml(company.phone)} · WhatsApp ${escapeHtml(company.whatsapp)}<br>
+            ${escapeHtml(company.email)} · ${escapeHtml(company.website.replace(/^https?:\/\//, ''))}
             <div>${dateStr}</div>
-            <div>Ref: ${state.quotationNumber}</div>
+            <div>Ref: ${escapeHtml(state.quotationNumber)}</div>
           </div>
         </div>
 
@@ -622,14 +642,14 @@ async function renderStep5(body) {
         </h2>
 
         <div style="margin-bottom: 1.5rem; line-height: 1.8;">
-          <strong>${customer?.name || 'Customer'}</strong><br>
-          ${customer?.city || ''}<br><br>
-          Dear Sir,<br>
-          We are pleased to submit you the requested solar proposal. Please feel free to contact with us for any further suggestions or queries:
+          <strong>${escapeHtml(customer?.name || 'Customer')}</strong><br>
+          ${escapeHtml(customer?.city || '')}<br><br>
+          Dear Valued Customer,<br>
+          We are pleased to submit the requested solar proposal. Please contact our team with any questions or requested adjustments.
         </div>
 
         <h3 style="color: #073d72; margin-bottom: 1rem;">
-          Quotation for ${state.systemSize}-KW ${systemLabel} Solar System:
+          Quotation for ${escapeHtml(state.systemSize)}-KW ${escapeHtml(systemLabel)} Solar System:
         </h3>
 
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 1.5rem;">
@@ -645,7 +665,7 @@ async function renderStep5(body) {
             ${state.items.filter(i => i.name).map((item, idx) => `
               <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 1 ? 'background: #f9fafb;' : ''}">
                 <td style="padding: 8px 12px; color: #666;">${idx + 1}</td>
-                <td style="padding: 8px 12px;">${item.name}</td>
+                <td style="padding: 8px 12px;">${escapeHtml(item.name)}</td>
                 <td style="padding: 8px 12px; text-align: center;">${item.quantity || '-'}</td>
                 <td style="padding: 8px 12px; text-align: right; font-weight: 500;">${formatCurrency(item.quantity * item.unitPrice).replace('PKR ', '')}</td>
               </tr>
@@ -671,7 +691,7 @@ async function renderStep5(body) {
 
         ${state.notes ? `
           <div style="margin-bottom: 1rem; font-style: italic; color: #666;">
-            Note: ${state.notes}
+            Note: ${escapeHtml(state.notes)}
           </div>
         ` : `
           <div style="margin-bottom: 1rem; font-style: italic; color: #666;">
@@ -681,7 +701,7 @@ async function renderStep5(body) {
 
         <h3 style="color: #073d72; margin-bottom: 0.75rem;">Terms & Conditions:</h3>
         <ol style="padding-left: 1.25rem; color: #555; font-size: 0.85rem; line-height: 1.8;">
-          ${(state.terms.length > 0 ? state.terms : DEFAULT_TERMS).map(t => `<li>${t}</li>`).join('')}
+          ${(state.terms.length > 0 ? state.terms : DEFAULT_TERMS).map(t => `<li>${escapeHtml(t)}</li>`).join('')}
         </ol>
 
         <div style="margin-top: 3rem; display: flex; justify-content: space-between;">
@@ -689,7 +709,8 @@ async function renderStep5(body) {
             <div style="margin-bottom: 0.5rem;"><strong>Thanks & Regards,</strong></div>
             <div style="margin-top: 2rem; border-top: 1px solid #999; padding-top: 0.5rem; width: 200px;">
               Sales Team<br>
-              <strong>Skyland Energy</strong>
+              <strong>${escapeHtml(company.name)}</strong><br>
+              <span style="font-size: 0.72rem; color: #666;">${escapeHtml(company.website.replace(/^https?:\/\//, ''))}</span>
             </div>
           </div>
           <div style="text-align: right;">
@@ -755,6 +776,7 @@ async function renderStep5(body) {
   });
 
   body.querySelector('#download-pdf-btn')?.addEventListener('click', async () => {
+    const { generateQuotationPDF } = await import('../utils/pdf-generator.js');
     await saveQuotation('draft');
     const el = document.getElementById('quotation-preview');
     generateQuotationPDF(el, state.quotationNumber);

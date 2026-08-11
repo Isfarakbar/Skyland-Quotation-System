@@ -1,6 +1,8 @@
 import { Product } from './models/Product.js';
 import { Setting } from './models/Setting.js';
 import { DEFAULT_TERMS, DEFAULT_SETTINGS } from '../src/db/seed-data.js';
+import bcrypt from 'bcryptjs';
+import { User } from './models/User.js';
 
 const INITIAL_PRODUCTS = [
   {
@@ -232,12 +234,51 @@ export async function seedMongoDB() {
       console.log(`🌱 Seeded ${INITIAL_PRODUCTS.length} initial products to MongoDB`);
     }
 
-    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-      await Setting.findOneAndUpdate(
-        { key },
-        { key, value },
-        { upsert: true }
-      );
+    await Setting.bulkWrite(
+      Object.entries(DEFAULT_SETTINGS).map(([key, value]) => ({
+        updateOne: { filter: { key }, update: { $setOnInsert: { key, value } }, upsert: true },
+      })),
+      { ordered: false }
+    );
+
+    // Upgrade untouched placeholder company values while preserving user customizations.
+    const verifiedCompanyDefaults = {
+      companyName: ['Skyland Energy', DEFAULT_SETTINGS.companyName],
+      companyAddress: ['', 'Lahore, Pakistan', DEFAULT_SETTINGS.companyAddress],
+      companyPhone: ['', DEFAULT_SETTINGS.companyPhone],
+      companyEmail: ['', DEFAULT_SETTINGS.companyEmail],
+    };
+    await Promise.all(Object.entries(verifiedCompanyDefaults).map(([key, acceptedValues]) =>
+      Setting.updateOne(
+        { key, value: { $in: acceptedValues.slice(0, -1) } },
+        { $set: { value: acceptedValues.at(-1) } }
+      )
+    ));
+
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+    const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD;
+    if (superAdminEmail && superAdminPassword && !(await User.exists({ role: 'super_admin' }))) {
+      if (superAdminPassword.length < 10) throw new Error('SUPER_ADMIN_PASSWORD must be at least 10 characters');
+      await User.create({
+        firstName: process.env.SUPER_ADMIN_FIRST_NAME || 'Skyland',
+        lastName: process.env.SUPER_ADMIN_LAST_NAME || 'Administrator',
+        email: superAdminEmail,
+        passwordHash: await bcrypt.hash(superAdminPassword, 12),
+        phone: process.env.SUPER_ADMIN_PHONE || '00000000000',
+        dateOfBirth: new Date('1990-01-01'),
+        gender: 'prefer_not_to_say',
+        cnic: process.env.SUPER_ADMIN_CNIC || 'BOOTSTRAP-SUPER-ADMIN',
+        address: process.env.SUPER_ADMIN_ADDRESS || 'Skyland Energy',
+        city: process.env.SUPER_ADMIN_CITY || 'Lahore',
+        department: 'Administration',
+        designation: 'Super Administrator',
+        emergencyContactName: 'Skyland Energy',
+        emergencyContactPhone: process.env.SUPER_ADMIN_PHONE || '00000000000',
+        role: 'super_admin',
+        status: 'active',
+        approvedAt: new Date(),
+      });
+      console.log('Created the initial super admin account');
     }
   } catch (error) {
     console.error('❌ Error seeding MongoDB:', error);

@@ -2,9 +2,10 @@
 // SKYLAND ENERGY — Dashboard Page
 // ============================================
 import { getAllProducts, getAllCustomers, getAllQuotations } from '../db/database.js';
-import { formatCurrency, formatCurrencyShort, formatDate, STATUS_CONFIG, SYSTEM_TYPES } from '../utils/helpers.js';
+import { formatCurrency, formatCurrencyShort, formatDate, STATUS_CONFIG, SYSTEM_TYPES, escapeHtml } from '../utils/helpers.js';
 import { createIcon } from '../components/icons.js';
 import { navigate } from '../router.js';
+import { hasRole } from '../auth.js';
 
 export async function renderDashboard() {
   const container = document.getElementById('page-content');
@@ -92,15 +93,15 @@ export async function renderDashboard() {
           <button class="btn btn-primary" data-action="new-quotation">
             ${createIcon('file-plus')} Create Quotation
           </button>
-          <button class="btn btn-secondary" data-action="add-product">
+          ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-secondary" data-action="add-product">
             ${createIcon('plus')} Add Product
-          </button>
+          </button>` : ''}
           <button class="btn btn-secondary" data-action="add-customer">
             ${createIcon('plus')} Add Customer
           </button>
-          <button class="btn btn-outline" data-action="view-rates">
+          ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-outline" data-action="view-rates">
             ${createIcon('trending-up')} View Rates
-          </button>
+          </button>` : ''}
         </div>
       </div>
 
@@ -138,9 +139,9 @@ export async function renderDashboard() {
                   const status = STATUS_CONFIG[q.status] || STATUS_CONFIG.draft;
                   return `
                     <tr style="cursor: pointer;" data-quotation-id="${q.id}">
-                      <td><strong>${q.quotationNumber || '-'}</strong></td>
-                      <td>${customer ? customer.name : 'Unknown'}</td>
-                      <td>${q.systemSize || '-'} KW ${SYSTEM_TYPES[q.systemType] || ''}</td>
+                      <td><strong>${escapeHtml(q.quotationNumber || '-')}</strong></td>
+                      <td>${escapeHtml(customer ? customer.name : 'Unknown')}</td>
+                      <td>${escapeHtml(q.systemSize || '-')} KW ${escapeHtml(SYSTEM_TYPES[q.systemType] || '')}</td>
                       <td><strong>${formatCurrency(q.grandTotal)}</strong></td>
                       <td><span class="badge ${status.class}">${status.label}</span></td>
                       <td>${formatDate(q.createdAt)}</td>
