@@ -4,6 +4,8 @@ import { DEFAULT_TERMS, DEFAULT_SETTINGS } from '../src/db/seed-data.js';
 import bcrypt from 'bcryptjs';
 import { User } from './models/User.js';
 
+const BOOTSTRAP_VERSION = '2026-08-17-team-performance-v1';
+
 const INITIAL_PRODUCTS = [
   {
     name: 'Trina N-Type Bifacial Solar Panel',
@@ -228,6 +230,11 @@ const INITIAL_PRODUCTS = [
 
 export async function seedMongoDB() {
   try {
+    // Vercel may create many short-lived function instances. Avoid repeating
+    // catalog counts, settings upserts, and account checks on every cold start.
+    const completedBootstrap = await Setting.exists({ key: 'systemBootstrapVersion', value: BOOTSTRAP_VERSION });
+    if (completedBootstrap) return;
+
     const productCount = await Product.countDocuments();
     if (productCount === 0) {
       await Product.insertMany(INITIAL_PRODUCTS);
@@ -280,6 +287,12 @@ export async function seedMongoDB() {
       });
       console.log('Created the initial super admin account');
     }
+
+    await Setting.updateOne(
+      { key: 'systemBootstrapVersion' },
+      { $set: { value: BOOTSTRAP_VERSION } },
+      { upsert: true }
+    );
   } catch (error) {
     console.error('❌ Error seeding MongoDB:', error);
   }

@@ -1,15 +1,43 @@
 import express from 'express';
-import { User, USER_PERMISSION_KEYS, USER_ROLES, USER_STATUSES } from '../models/User.js';
+import { User, USER_PERMISSION_KEYS, USER_STATUSES, getEffectivePermissions } from '../models/User.js';
 import { allowRoles } from '../middleware/auth.js';
 import { sendEmail } from '../services/email.js';
 
 const router = express.Router();
 
+const teamListFields = 'firstName lastName email phone designation profilePicture role permissions status createdAt approvedAt';
+const serializeTeamUser = user => {
+  const permissions = user.permissions instanceof Map ? Object.fromEntries(user.permissions) : (user.permissions || {});
+  return {
+    id: user._id.toString(),
+    firstName: user.firstName || '',
+    lastName: user.lastName || '',
+    email: user.email,
+    phone: user.phone || '',
+    designation: user.designation || '',
+    profilePicture: user.profilePicture || '',
+    role: user.role,
+    permissions,
+    effectivePermissions: getEffectivePermissions({ ...user, permissions }),
+    status: user.status,
+    createdAt: user.createdAt,
+    approvedAt: user.approvedAt,
+  };
+};
+
 router.get('/', allowRoles('super_admin', 'admin'), async (req, res) => {
   const filter = {};
   if (req.query.status && USER_STATUSES.includes(req.query.status)) filter.status = req.query.status;
-  const users = await User.find(filter).sort({ createdAt: -1 });
-  res.json(users.map(user => user.toJSON()));
+  const users = await User.find(filter).select(teamListFields).sort({ createdAt: -1 }).lean();
+  res.set('Cache-Control', 'private, no-store');
+  res.json(users.map(serializeTeamUser));
+});
+
+router.get('/:id', allowRoles('super_admin', 'admin'), async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.set('Cache-Control', 'private, no-store');
+  res.json(user.toJSON());
 });
 
 router.patch('/:id/approval', allowRoles('super_admin'), async (req, res) => {

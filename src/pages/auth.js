@@ -1,13 +1,14 @@
 import { authRequest, login, uploadImage } from '../auth.js';
 import { navigate } from '../router.js';
 import { escapeHtml } from '../utils/helpers.js';
+import skylandLogo from '../../Skyland Recreated Logo.svg?url';
 
 function authLayout(title, subtitle, content) {
   const app = document.getElementById('app');
   app.className = 'auth-layout';
   app.innerHTML = `
     <section class="auth-brand-panel">
-      <img src="/Skyland Recreated Logo.svg" alt="Skyland Energy" class="auth-logo" />
+      <span class="auth-logo-crop"><img src="${skylandLogo}" alt="Skyland Energy" class="auth-logo" /></span>
       <div><p class="auth-eyebrow">SKYLAND ENERGY</p><h1>Solar quotations.<br/>Built for your team.</h1><p>Securely manage customers, products, rates, and professional proposals in one place.</p></div>
     </section>
     <main class="auth-main"><div class="auth-card"><h2>${title}</h2><p class="auth-subtitle">${subtitle}</p>${content}</div></main>`;
