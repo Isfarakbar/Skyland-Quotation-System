@@ -79,6 +79,7 @@ before(async () => {
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
   assert.equal((await request('/api/health')).status, 200);
+  assert.equal((await request('/api/auth/me')).status, 401);
 });
 
 after(async () => {
