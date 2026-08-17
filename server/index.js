@@ -19,7 +19,10 @@ import { requireAuth } from './middleware/auth.js';
 dotenv.config();
 
 if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
-  const requiredVariables = ['MONGODB_URI', 'JWT_SECRET', 'APP_URL', 'BREVO_API_KEY', 'CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'];
+  // Only core authentication/database settings should prevent the API from
+  // starting. Email and image integrations already return feature-specific
+  // errors when they are not configured, and Vercel supplies deployment URLs.
+  const requiredVariables = ['MONGODB_URI', 'JWT_SECRET'];
   const missingVariables = requiredVariables.filter(key => !process.env[key]);
   if (missingVariables.length) throw new Error(`Missing required production environment variables: ${missingVariables.join(', ')}`);
   if (process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
@@ -32,13 +35,20 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-const allowedOrigins = (process.env.APP_URL || 'http://localhost:3000,http://localhost:5173')
-  .split(',')
-  .map(origin => origin.trim().replace(/\/$/, ''));
+const normalizeOrigin = value => {
+  const origin = String(value || '').trim();
+  if (!origin) return '';
+  return (origin.startsWith('http://') || origin.startsWith('https://') ? origin : `https://${origin}`).replace(/\/$/, '');
+};
+const allowedOrigins = new Set([
+  ...(process.env.APP_URL || 'http://localhost:3000,http://localhost:5173').split(','),
+  process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  process.env.VERCEL_URL,
+].map(normalizeOrigin).filter(Boolean));
 app.use(cors({
   credentials: true,
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin.replace(/\/$/, ''))) return callback(null, true);
+    if (!origin || allowedOrigins.has(normalizeOrigin(origin))) return callback(null, true);
     return callback(Object.assign(new Error('Origin is not allowed by CORS'), { status: 403 }));
   },
 }));

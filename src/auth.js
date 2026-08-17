@@ -7,8 +7,18 @@ export async function authRequest(endpoint, options = {}) {
     ...options,
     headers: isForm ? options.headers : { 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
-  const data = response.status === 204 ? null : await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || 'Request failed');
+  const responseText = response.status === 204 ? '' : await response.text();
+  let data = null;
+  if (responseText) {
+    try { data = JSON.parse(responseText); }
+    catch { data = { error: responseText.trim() }; }
+  }
+  if (!response.ok) {
+    const fallback = response.status >= 500
+      ? 'The Skyland server is temporarily unavailable. Please try again shortly.'
+      : `Request failed (${response.status})`;
+    throw new Error(data?.error || fallback);
+  }
   return data;
 }
 

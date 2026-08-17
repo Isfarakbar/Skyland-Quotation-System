@@ -44,11 +44,14 @@ async function apiFetch(endpoint, options = {}) {
       headers: { 'Content-Type': 'application/json' },
       ...options,
     });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || `API Error: ${res.statusText}`);
+    const responseText = res.status === 204 ? '' : await res.text();
+    let data = null;
+    if (responseText) {
+      try { data = JSON.parse(responseText); }
+      catch { data = { error: responseText.trim() }; }
     }
-    return res.status === 204 ? null : await res.json();
+    if (!res.ok) throw new Error(data?.error || `API Error: ${res.status || res.statusText}`);
+    return data;
 }
 
 // ---- Products CRUD ----
