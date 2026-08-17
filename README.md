@@ -17,6 +17,7 @@
 - ⚡ **Pakistan-Focused Quotation Builder**: Select multiple panels, inverters, batteries, accessories, labour and services; capture DISCO, sanctioned load, meter phase, roof type and site survey; then calculate discounts, configurable taxes, totals and per-watt rates.
 - 🛠️ **Complete Installation Scope**: Add structure, protection, cabling, earthing, labour, design, testing, commissioning, transport and optional prosumer/DISCO coordination in one click.
 - 🤝 **Commercial Controls**: Configurable payment milestones, delivery timeline, product and workmanship warranties, regulatory notes, and server-verified totals.
+- 🔐 **Individual Team Access**: Super Admins can grant or revoke product editing/deletion, price-list access, customer and quotation management, proposal sending, and quotation settings for each manager or employee independently. Changes invalidate existing sessions immediately.
 - 🚀 **Fast Route Loading**: Page-level code splitting keeps the initial Vercel browser bundle smaller and loads feature screens on demand.
 - 🧾 **No Stock Tracking**: The product area is a reusable price catalog. It does not maintain inventory quantities or stock movements.
 - 📦 **Product Catalog Management**: Dynamic grid view supporting solar panels, inverters (on-grid/hybrid), batteries, structures, cables, and accessories with image compression and upload handling.

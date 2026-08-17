@@ -1,7 +1,7 @@
 import express from 'express';
 import { Quotation } from '../models/Quotation.js';
 import { Customer } from '../models/Customer.js';
-import { allowRoles } from '../middleware/auth.js';
+import { allowPermission, hasPermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -86,8 +86,8 @@ router.put('/:id', async (req, res) => {
   try {
     const quotation = await Quotation.findById(req.params.id);
     if (!quotation) return res.status(404).json({ error: 'Quotation not found' });
-    if (req.user.role === 'employee' && quotation.createdBy && quotation.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({ error: 'Employees can update quotations they created only' });
+    if (!hasPermission(req.user, 'quotations_manage_all') && quotation.createdBy && quotation.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'You can update quotations you created only' });
     }
     const previousStatus = quotation.status;
     const { createdBy: _createdBy, updatedBy: _updatedBy, statusHistory: _statusHistory, ...updates } = req.body;
@@ -111,7 +111,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE quotation
-router.delete('/:id', allowRoles('super_admin', 'admin', 'manager'), async (req, res) => {
+router.delete('/:id', allowPermission('quotations_delete'), async (req, res) => {
   try {
     const quotation = await Quotation.findByIdAndDelete(req.params.id);
     if (!quotation) return res.status(404).json({ error: 'Quotation not found' });

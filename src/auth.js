@@ -62,3 +62,9 @@ export async function uploadImage(file, folder = 'products', registration = fals
 export function hasRole(...roles) {
   return Boolean(currentUser && roles.includes(currentUser.role));
 }
+
+export function hasPermission(permission) {
+  if (!currentUser) return false;
+  if (currentUser.role === 'super_admin') return true;
+  return Boolean(currentUser.effectivePermissions?.[permission]);
+}

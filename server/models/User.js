@@ -2,6 +2,30 @@ import mongoose from 'mongoose';
 
 export const USER_ROLES = ['super_admin', 'admin', 'manager', 'employee'];
 export const USER_STATUSES = ['pending', 'active', 'suspended', 'rejected'];
+export const USER_PERMISSION_KEYS = [
+  'products_manage', 'products_delete', 'rates_view', 'rates_manage',
+  'customers_manage_all', 'customers_delete', 'quotations_manage_all',
+  'quotations_delete', 'quotations_send_all', 'settings_manage',
+];
+
+const allPermissions = Object.fromEntries(USER_PERMISSION_KEYS.map(key => [key, true]));
+export const ROLE_PERMISSION_DEFAULTS = {
+  super_admin: allPermissions,
+  admin: allPermissions,
+  manager: {
+    products_manage: true, products_delete: false, rates_view: true, rates_manage: true,
+    customers_manage_all: true, customers_delete: true, quotations_manage_all: true,
+    quotations_delete: true, quotations_send_all: true, settings_manage: true,
+  },
+  employee: Object.fromEntries(USER_PERMISSION_KEYS.map(key => [key, false])),
+};
+
+export function getEffectivePermissions(user) {
+  const overrides = user?.permissions instanceof Map ? Object.fromEntries(user.permissions) : (user?.permissions || {});
+  const effective = { ...(ROLE_PERMISSION_DEFAULTS[user?.role] || {}), ...overrides };
+  if (effective.rates_manage) effective.rates_view = true;
+  return effective;
+}
 
 const userSchema = new mongoose.Schema(
   {
@@ -23,6 +47,7 @@ const userSchema = new mongoose.Schema(
     emergencyContactName: { type: String, required: true, trim: true },
     emergencyContactPhone: { type: String, required: true, trim: true },
     role: { type: String, enum: USER_ROLES, default: 'employee', index: true },
+    permissions: { type: Map, of: Boolean, default: () => ({}) },
     status: { type: String, enum: USER_STATUSES, default: 'pending', index: true },
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     approvedAt: { type: Date, default: null },
@@ -34,6 +59,7 @@ const userSchema = new mongoose.Schema(
   {
     timestamps: true,
     toJSON: {
+      flattenMaps: true,
       transform: (_doc, ret) => {
         ret.id = ret._id.toString();
         delete ret._id;
@@ -41,6 +67,7 @@ const userSchema = new mongoose.Schema(
         delete ret.passwordHash;
         delete ret.passwordResetTokenHash;
         delete ret.passwordResetExpiresAt;
+        ret.effectivePermissions = getEffectivePermissions(ret);
         return ret;
       },
     },

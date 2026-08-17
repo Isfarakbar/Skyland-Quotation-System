@@ -12,7 +12,7 @@ import './styles/layout.css';
 import { getDB } from './db/database.js';
 import { registerRoute, initRouter, onBeforeNavigate, navigate } from './router.js';
 import { renderSidebar, renderSidebarOverlay } from './components/sidebar.js';
-import { getCurrentUser, restoreSession } from './auth.js';
+import { getCurrentUser, hasPermission, restoreSession } from './auth.js';
 
 const lazyPage = (loader, exportName) => async params => {
   const page = await loader();
@@ -86,7 +86,8 @@ async function init() {
     onBeforeNavigate(path => {
       if (['/login', '/signup', '/forgot-password'].includes(path)) { navigate('/dashboard'); return false; }
       if (path === '/users' && !['super_admin', 'admin'].includes(user.role)) { navigate('/dashboard'); return false; }
-      if (['/rates', '/settings'].includes(path) && !['super_admin', 'admin', 'manager'].includes(user.role)) { navigate('/dashboard'); return false; }
+      if (path === '/rates' && !hasPermission('rates_view')) { navigate('/dashboard'); return false; }
+      if (path === '/settings' && !hasPermission('settings_manage')) { navigate('/dashboard'); return false; }
       return true;
     });
 

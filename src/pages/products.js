@@ -3,7 +3,7 @@
 // ============================================
 import { getAllProducts, addProduct, updateProduct, deleteProduct } from '../db/database.js';
 import { formatCurrency, CATEGORY_LABELS, matchesSearch, debounce, escapeHtml } from '../utils/helpers.js';
-import { hasRole, uploadImage } from '../auth.js';
+import { hasPermission, uploadImage } from '../auth.js';
 import { createIcon } from '../components/icons.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { showConfirm } from '../components/confirm-dialog.js';
@@ -27,7 +27,7 @@ export async function renderProducts() {
         </div>
       </div>
       <div class="page-header-right">
-        ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-primary" id="add-product-btn">
+        ${hasPermission('products_manage') ? `<button class="btn btn-primary" id="add-product-btn">
           ${createIcon('plus')} Add Product
         </button>` : ''}
       </div>
@@ -118,11 +118,11 @@ function renderProductGrid(products) {
       <p class="product-card-brand">${escapeHtml(p.brand || '')}${p.capacity ? ` — ${escapeHtml(p.capacity)}${escapeHtml(p.capacityUnit || '')}` : ''}</p>
       <div class="product-card-footer">
         <span class="product-card-price">${formatCurrency(p.unitPrice)}</span>
-        ${hasRole('super_admin', 'admin', 'manager') ? `<div class="product-card-actions">
-          <button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-id="${p.id}" data-tooltip="Edit">
+        ${hasPermission('products_manage') || hasPermission('products_delete') ? `<div class="product-card-actions">
+          ${hasPermission('products_manage') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-id="${p.id}" data-tooltip="Edit">
             ${createIcon('edit')}
-          </button>
-          ${hasRole('super_admin', 'admin') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${p.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
+          </button>` : ''}
+          ${hasPermission('products_delete') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${p.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
             ${createIcon('trash')}
           </button>` : ''}
         </div>` : ''}

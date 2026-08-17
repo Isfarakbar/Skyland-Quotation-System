@@ -11,7 +11,7 @@ import { toggleMobileSidebar } from '../components/sidebar.js';
 import { sendQuotationWhatsApp } from '../utils/whatsapp.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { DEFAULT_TERMS } from '../db/seed-data.js';
-import { hasRole } from '../auth.js';
+import { getCurrentUser, hasPermission } from '../auth.js';
 
 let currentFilter = 'all';
 let searchQuery = '';
@@ -137,6 +137,9 @@ function renderQuotationTable(quotations, customers) {
           ${filtered.map(q => {
             const customer = customers.find(c => c.id === q.customerId);
             const status = STATUS_CONFIG[q.status] || STATUS_CONFIG.draft;
+            const ownsQuotation = !q.createdBy || String(q.createdBy) === String(getCurrentUser()?.id);
+            const canEdit = ownsQuotation || hasPermission('quotations_manage_all');
+            const canSend = ownsQuotation || hasPermission('quotations_send_all');
             return `
               <tr>
                 <td><strong>${escapeHtml(q.quotationNumber || '-')}</strong></td>
@@ -150,19 +153,19 @@ function renderQuotationTable(quotations, customers) {
                     <button class="btn btn-ghost btn-icon btn-sm" data-action="view" data-id="${q.id}" data-tooltip="View">
                       ${createIcon('eye')}
                     </button>
-                    <button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-id="${q.id}" data-tooltip="Edit">
+                    ${canEdit ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-id="${q.id}" data-tooltip="Edit">
                       ${createIcon('edit')}
-                    </button>
+                    </button>` : ''}
                     <button class="btn btn-ghost btn-icon btn-sm" data-action="duplicate" data-id="${q.id}" data-tooltip="Duplicate">
                       ${createIcon('copy')}
                     </button>
-                    <button class="btn btn-whatsapp btn-icon btn-sm" data-action="whatsapp" data-id="${q.id}" data-tooltip="WhatsApp">
+                    ${canSend ? `<button class="btn btn-whatsapp btn-icon btn-sm" data-action="whatsapp" data-id="${q.id}" data-tooltip="WhatsApp">
                       ${createIcon('whatsapp')}
-                    </button>
-                    <button class="btn btn-ghost btn-icon btn-sm" data-action="status" data-id="${q.id}" data-tooltip="Update Status">
+                    </button>` : ''}
+                    ${canEdit ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="status" data-id="${q.id}" data-tooltip="Update Status">
                       ${createIcon('refresh')}
-                    </button>
-                    ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${q.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
+                    </button>` : ''}
+                    ${hasPermission('quotations_delete') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${q.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
                       ${createIcon('trash')}
                     </button>` : ''}
                   </div>
@@ -267,6 +270,9 @@ async function showQuotationDetail(id) {
   }
 
   const customer = await getCustomer(q.customerId);
+  const ownsQuotation = !q.createdBy || String(q.createdBy) === String(getCurrentUser()?.id);
+  const canEditQuotation = ownsQuotation || hasPermission('quotations_manage_all');
+  const canSendQuotation = ownsQuotation || hasPermission('quotations_send_all');
   const status = STATUS_CONFIG[q.status] || STATUS_CONFIG.draft;
   const systemLabel = SYSTEM_TYPES[q.systemType] || 'On-Grid';
   const subtotal = (q.items || []).reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
@@ -296,10 +302,10 @@ async function showQuotationDetail(id) {
         </div>
       </div>
       <div class="page-header-right">
-        <button class="btn btn-secondary" id="edit-btn">${createIcon('edit')} Edit</button>
+        ${canEditQuotation ? `<button class="btn btn-secondary" id="edit-btn">${createIcon('edit')} Edit</button>` : ''}
         <button class="btn btn-outline" id="pdf-btn">${createIcon('download')} PDF</button>
-        <button class="btn btn-outline" id="email-btn" ${customer?.email ? '' : 'disabled'} title="${customer?.email ? `Email to ${escapeHtml(customer.email)}` : 'Add a customer email address first'}">${createIcon('mail')} Email</button>
-        <button class="btn btn-whatsapp" id="wa-btn">${createIcon('whatsapp')} WhatsApp</button>
+        ${canSendQuotation ? `<button class="btn btn-outline" id="email-btn" ${customer?.email ? '' : 'disabled'} title="${customer?.email ? `Email to ${escapeHtml(customer.email)}` : 'Add a customer email address first'}">${createIcon('mail')} Email</button>
+        <button class="btn btn-whatsapp" id="wa-btn">${createIcon('whatsapp')} WhatsApp</button>` : ''}
         <button class="btn btn-ghost" id="print-btn">${createIcon('printer')} Print</button>
       </div>
     </div>

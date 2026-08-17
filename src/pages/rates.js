@@ -1,15 +1,17 @@
 // ============================================
 // SKYLAND ENERGY — Rates Management Page
 // ============================================
-import { getAllProducts, updateProduct } from '../db/database.js';
+import { getAllProducts, updateProductRate } from '../db/database.js';
 import { formatCurrency, debounce } from '../utils/helpers.js';
 import { createIcon } from '../components/icons.js';
 import { toast } from '../components/toast.js';
 import { toggleMobileSidebar } from '../components/sidebar.js';
+import { hasPermission } from '../auth.js';
 
 export async function renderRates() {
   const container = document.getElementById('page-content');
   const products = await getAllProducts();
+  const canEditRates = hasPermission('rates_manage');
 
   const panels = products.filter(p => p.category === 'solar-panel');
   const inverters = products.filter(p => p.category === 'inverter');
@@ -21,13 +23,13 @@ export async function renderRates() {
         <button class="mobile-menu-toggle" id="mobile-menu-btn">${createIcon('menu')}</button>
         <div>
           <h1 class="page-title">Catalog Price List</h1>
-          <p class="page-subtitle">Update reusable product prices — changes apply when a product is added to a new quotation</p>
+          <p class="page-subtitle">${canEditRates ? 'Update reusable product prices — changes apply when a product is added to a new quotation' : 'View the current reusable product prices'}</p>
         </div>
       </div>
       <div class="page-header-right">
-        <button class="btn btn-primary" id="save-all-btn">
+        ${canEditRates ? `<button class="btn btn-primary" id="save-all-btn">
           ${createIcon('save')} Save All Changes
-        </button>
+        </button>` : '<span class="badge badge-pending">Read only</span>'}
       </div>
     </div>
 
@@ -139,6 +141,7 @@ export async function renderRates() {
   `;
 
   container.querySelector('#mobile-menu-btn')?.addEventListener('click', toggleMobileSidebar);
+  if (!canEditRates) container.querySelectorAll('input[data-field]').forEach(input => { input.disabled = true; });
 
   // Auto-calc unit price from price-per-watt
   container.querySelectorAll('input[data-field="pricePerWatt"]').forEach(input => {
@@ -171,7 +174,7 @@ export async function renderRates() {
 
     try {
       for (const [id, data] of Object.entries(updates)) {
-        await updateProduct(id, data);
+        await updateProductRate(id, data);
       }
       toast.success(`Updated ${Object.keys(updates).length} products`);
     } catch (err) {

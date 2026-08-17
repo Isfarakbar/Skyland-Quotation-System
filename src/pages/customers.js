@@ -10,7 +10,7 @@ import { toast } from '../components/toast.js';
 import { sendGreeting } from '../utils/whatsapp.js';
 import { navigate } from '../router.js';
 import { toggleMobileSidebar } from '../components/sidebar.js';
-import { hasRole } from '../auth.js';
+import { getCurrentUser, hasPermission } from '../auth.js';
 
 let searchQuery = '';
 
@@ -96,6 +96,7 @@ function renderCustomerTable(customers, quotations) {
         <tbody>
           ${filtered.map(c => {
             const quoteCount = quotations.filter(q => q.customerId === c.id).length;
+            const canEdit = hasPermission('customers_manage_all') || !c.createdBy || String(c.createdBy) === String(getCurrentUser()?.id);
             return `
               <tr>
                 <td>
@@ -120,10 +121,10 @@ function renderCustomerTable(customers, quotations) {
                     <button class="btn btn-ghost btn-icon btn-sm" data-action="quote" data-id="${c.id}" data-tooltip="New Quotation">
                       ${createIcon('file-plus')}
                     </button>
-                    <button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-id="${c.id}" data-tooltip="Edit">
+                    ${canEdit ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="edit" data-id="${c.id}" data-tooltip="Edit">
                       ${createIcon('edit')}
-                    </button>
-                    ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${c.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
+                    </button>` : ''}
+                    ${hasPermission('customers_delete') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${c.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
                       ${createIcon('trash')}
                     </button>` : ''}
                   </div>

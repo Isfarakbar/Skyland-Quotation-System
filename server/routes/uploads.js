@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
-import { requireAuth } from '../middleware/auth.js';
+import { hasPermission, requireAuth } from '../middleware/auth.js';
 import { rateLimit } from 'express-rate-limit';
 
 const router = express.Router();
@@ -28,8 +28,8 @@ async function handleImageUpload(req, res, forcedFolder) {
 const registrationUploadLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false });
 router.post('/registration-profile', registrationUploadLimiter, upload.single('image'), (req, res) => handleImageUpload(req, res, 'skyland/profiles'));
 router.post('/image', requireAuth, upload.single('image'), (req, res) => {
-  if (req.body.folder !== 'profiles' && req.user.role === 'employee') {
-    return res.status(403).json({ error: 'Employees can upload profile pictures only' });
+  if (req.body.folder !== 'profiles' && !hasPermission(req.user, 'products_manage')) {
+    return res.status(403).json({ error: 'You do not have permission to upload product pictures' });
   }
   return handleImageUpload(req, res);
 });

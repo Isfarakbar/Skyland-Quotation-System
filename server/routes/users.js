@@ -1,5 +1,5 @@
 import express from 'express';
-import { User, USER_ROLES, USER_STATUSES } from '../models/User.js';
+import { User, USER_PERMISSION_KEYS, USER_ROLES, USER_STATUSES } from '../models/User.js';
 import { allowRoles } from '../middleware/auth.js';
 import { sendEmail } from '../services/email.js';
 
@@ -8,8 +8,8 @@ const router = express.Router();
 router.get('/', allowRoles('super_admin', 'admin'), async (req, res) => {
   const filter = {};
   if (req.query.status && USER_STATUSES.includes(req.query.status)) filter.status = req.query.status;
-  const users = await User.find(filter).sort({ createdAt: -1 }).lean();
-  res.json(users.map(user => ({ ...user, id: user._id.toString(), passwordHash: undefined })));
+  const users = await User.find(filter).sort({ createdAt: -1 });
+  res.json(users.map(user => user.toJSON()));
 });
 
 router.patch('/:id/approval', allowRoles('super_admin'), async (req, res) => {
@@ -48,6 +48,7 @@ router.patch('/:id', allowRoles('super_admin', 'admin'), async (req, res) => {
   }
   if (req.body.role) {
     if (!['admin', 'manager', 'employee'].includes(req.body.role)) return res.status(400).json({ error: 'Invalid role' });
+    if (user.role !== req.body.role) user.permissions = {};
     user.role = req.body.role;
   }
   if (req.body.status) {
@@ -57,6 +58,27 @@ router.patch('/:id', allowRoles('super_admin', 'admin'), async (req, res) => {
   }
   await user.save();
   res.json(user);
+});
+
+router.patch('/:id/permissions', allowRoles('super_admin'), async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!['manager', 'employee'].includes(user.role)) {
+    return res.status(400).json({ error: 'Custom access can be assigned to managers and employees only' });
+  }
+  const submitted = req.body.permissions;
+  if (!submitted || typeof submitted !== 'object' || Array.isArray(submitted)) {
+    return res.status(400).json({ error: 'Permissions must be an object' });
+  }
+  const invalidKeys = Object.keys(submitted).filter(key => !USER_PERMISSION_KEYS.includes(key));
+  if (invalidKeys.length) return res.status(400).json({ error: `Invalid permissions: ${invalidKeys.join(', ')}` });
+  if (Object.values(submitted).some(value => typeof value !== 'boolean')) {
+    return res.status(400).json({ error: 'Every permission value must be true or false' });
+  }
+  user.permissions = Object.fromEntries(Object.entries(submitted).map(([key, value]) => [key, Boolean(value)]));
+  user.sessionVersion += 1;
+  await user.save();
+  res.json({ user: user.toJSON(), message: Object.keys(submitted).length ? 'Custom access updated' : 'Role defaults restored' });
 });
 
 export default router;

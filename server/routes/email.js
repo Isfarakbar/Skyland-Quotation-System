@@ -3,6 +3,7 @@ import { rateLimit } from 'express-rate-limit';
 import { sendEmail } from '../services/email.js';
 import { Quotation } from '../models/Quotation.js';
 import { Customer } from '../models/Customer.js';
+import { hasPermission } from '../middleware/auth.js';
 
 const router = express.Router();
 const emailLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false });
@@ -12,8 +13,8 @@ router.post('/send-quotation', emailLimiter, async (req, res) => {
   try {
     const quotation = await Quotation.findById(req.body.quotationId);
     if (!quotation) return res.status(404).json({ error: 'Quotation not found' });
-    if (req.user.role === 'employee' && quotation.createdBy && quotation.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({ error: 'Employees can email quotations they created only' });
+    if (!hasPermission(req.user, 'quotations_send_all') && quotation.createdBy && quotation.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'You can email quotations you created only' });
     }
     const customer = await Customer.findById(quotation.customerId);
     if (!customer?.email || !/^\S+@\S+\.\S+$/.test(customer.email)) {

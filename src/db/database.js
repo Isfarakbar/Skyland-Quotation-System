@@ -122,6 +122,18 @@ export async function updateProduct(id, product) {
   return data;
 }
 
+export async function updateProductRate(id, rate) {
+  const remote = await apiFetch(`/products/${id}/rate`, {
+    method: 'PATCH',
+    body: JSON.stringify(rate),
+  });
+  if (remote) {
+    const db = await getDB();
+    await db.put('products', remote);
+  }
+  return remote;
+}
+
 export async function deleteProduct(id) {
   const remote = await apiFetch(`/products/${id}`, { method: 'DELETE' });
   const db = await getDB();
