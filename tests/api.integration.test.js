@@ -135,6 +135,15 @@ test('super admin can grant and revoke individual manager or employee access', a
   const [superCookie, originalEmployeeCookie] = await Promise.all([
     login('superadmin@skyland.test'), login('employee@skyland.test'),
   ]);
+  const teamList = await request('/api/users', { cookie: superCookie });
+  assert.equal(teamList.status, 200);
+  const listedEmployee = teamList.data.find(user => user.id === employee.id);
+  assert.equal(listedEmployee.email, 'employee@skyland.test');
+  assert.equal(listedEmployee.cnic, undefined);
+  assert.equal(listedEmployee.effectivePermissions.products_manage, false);
+  const employeeDetails = await request(`/api/users/${employee.id}`, { cookie: superCookie });
+  assert.equal(employeeDetails.status, 200);
+  assert.equal(employeeDetails.data.cnic, 'AUDIT-EMPLOYEE');
   assert.equal((await request('/api/products', { method: 'POST', cookie: originalEmployeeCookie, body: { name: 'Blocked Product', category: 'other', unitPrice: 100 } })).status, 403);
 
   const permissions = {

@@ -3,6 +3,7 @@
 // ============================================
 import { navigate } from '../router.js';
 import { createIcon } from './icons.js';
+import skylandLogo from '../../Skyland Recreated Logo.svg?url';
 import { getCurrentUser, hasPermission, logout } from '../auth.js';
 import { escapeHtml } from '../utils/helpers.js';
 
@@ -17,7 +18,7 @@ export function renderSidebar() {
 
   sidebar.innerHTML = `
     <div class="sidebar-header">
-      <img src="/Skyland Recreated Logo.svg" alt="Skyland Energy" class="sidebar-logo" />
+      <span class="sidebar-logo-crop"><img src="${skylandLogo}" alt="" class="sidebar-logo" /></span>
       <div class="sidebar-brand">
         <span class="sidebar-brand-name">Skyland Energy</span>
         <span class="sidebar-brand-tagline">Quotation System</span>

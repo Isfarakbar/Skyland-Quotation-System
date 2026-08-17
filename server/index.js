@@ -56,6 +56,13 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
 
+// Keep the platform health check independent from MongoDB so a Vercel probe
+// does not wake the database or wait for bootstrap work.
+app.get('/api/health', (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Ensure DB is connected before processing API requests (Essential for Vercel Serverless)
 let initializationPromise;
 app.use('/api', async (_req, res, next) => {
@@ -71,10 +78,6 @@ app.use('/api', async (_req, res, next) => {
 });
 
 // Public API routes
-app.get('/api/health', (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
 app.use('/api/auth', authRouter);
 app.use('/api/uploads', uploadsRouter);
 
