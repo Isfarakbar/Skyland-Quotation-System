@@ -14,7 +14,7 @@ import emailRouter from './routes/email.js';
 import authRouter from './routes/auth.js';
 import usersRouter from './routes/users.js';
 import uploadsRouter from './routes/uploads.js';
-import { requireAuth } from './middleware/auth.js';
+import { AUTH_COOKIE, requireAuth } from './middleware/auth.js';
 
 dotenv.config();
 
@@ -65,7 +65,12 @@ app.get('/api/health', (_req, res) => {
 
 // Ensure DB is connected before processing API requests (Essential for Vercel Serverless)
 let initializationPromise;
-app.use('/api', async (_req, res, next) => {
+app.use('/api', async (req, res, next) => {
+  // A signed-out browser checks /auth/me during startup. It can be rejected
+  // from the missing cookie immediately instead of paying for a MongoDB cold
+  // connection before the login screen appears.
+  const hasBearerToken = req.get('authorization')?.startsWith('Bearer ');
+  if (req.path === '/auth/me' && !req.cookies?.[AUTH_COOKIE] && !hasBearerToken) return next();
   try {
     initializationPromise ||= connectDB().then(seedMongoDB);
     await initializationPromise;
