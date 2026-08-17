@@ -99,7 +99,7 @@ test('registration remains pending until a super admin approves it', async () =>
       cnic: 'AUDIT-PENDING-MANAGER',
       role: 'manager',
       password,
-      profilePicture: 'https://res.cloudinary.com/demo/image/upload/audit.jpg',
+      profilePicture: 'https://res.cloudinary.com/test-cloud/image/upload/skyland/profiles/audit.jpg',
     },
   });
   assert.equal(registration.status, 201);
@@ -219,4 +219,54 @@ test('quotation totals, ownership, references, and linked deletes are protected'
   assert.equal((await request(`/api/quotations/${quote.data.id}`, { method: 'PUT', cookie: managerCookie, body: { status: 'accepted' } })).status, 200);
   assert.equal((await request(`/api/quotations/${quote.data.id}`, { method: 'DELETE', cookie: managerCookie })).status, 200);
   assert.equal((await request(`/api/customers/${customer.data.id}`, { method: 'DELETE', cookie: managerCookie })).status, 200);
+});
+
+test('employee list and direct record access are limited to owned or assigned work', async () => {
+  const [employeeCookie, secondEmployeeCookie] = await Promise.all([
+    login('employee@skyland.test'), login('second.employee@skyland.test'),
+  ]);
+  const customer = await request('/api/customers', { method: 'POST', cookie: employeeCookie, body: { name: 'Private Customer', email: 'private@example.com', phone: '03009999999', city: 'Lahore' } });
+  assert.equal(customer.status, 201);
+  const ownList = await request('/api/customers?page=1&limit=10', { cookie: employeeCookie });
+  assert.equal(ownList.status, 200);
+  assert.ok(ownList.data.items.some(row => row.id === customer.data.id));
+  const otherList = await request('/api/customers?page=1&limit=10', { cookie: secondEmployeeCookie });
+  assert.equal(otherList.status, 200);
+  assert.ok(!otherList.data.items.some(row => row.id === customer.data.id));
+  assert.equal((await request(`/api/customers/${customer.data.id}`, { cookie: secondEmployeeCookie })).status, 404);
+});
+
+test('sessions are listed and can be remotely revoked', async () => {
+  const firstCookie = await login('employee@skyland.test');
+  const secondCookie = await login('employee@skyland.test');
+  const sessions = await request('/api/auth/sessions', { cookie: firstCookie });
+  assert.equal(sessions.status, 200);
+  const other = sessions.data.find(row => !row.current);
+  assert.ok(other);
+  assert.equal((await request(`/api/auth/sessions/${other.id}`, { method: 'DELETE', cookie: firstCookie })).status, 204);
+  assert.equal((await request('/api/auth/me', { cookie: secondCookie })).status, 401);
+});
+
+test('paginated catalog responses and quotation approval revisions are available', async () => {
+  const [employeeCookie, managerCookie] = await Promise.all([login('employee@skyland.test'), login('pending.manager@skyland.test')]);
+  const catalog = await request('/api/products?page=1&limit=5&sort=name', { cookie: employeeCookie });
+  assert.equal(catalog.status, 200);
+  assert.equal(catalog.data.items.length, 5);
+  assert.ok(catalog.data.meta.total >= 20);
+
+  const customer = await request('/api/customers', { method: 'POST', cookie: employeeCookie, body: { name: 'Approval Customer', phone: '03008888888', city: 'Islamabad' } });
+  const reference = `SLE-APPROVAL-${Date.now()}`;
+  const quotation = await request('/api/quotations', { method: 'POST', cookie: employeeCookie, body: {
+    quotationNumber: reference, customerId: customer.data.id, systemSize: 5, systemType: 'ongrid',
+    items: [{ name: 'Solar installation package', category: 'service', quantity: 1, unitPrice: 500000 }],
+    subtotal: 500000, grandTotal: 500000, discount: 0, discountType: 'percent', taxRate: 0,
+  } });
+  assert.equal(quotation.status, 201);
+  assert.equal((await request(`/api/quotations/${quotation.data.id}/approval`, { method: 'POST', cookie: employeeCookie, body: { note: 'Please review' } })).status, 200);
+  const approved = await request(`/api/quotations/${quotation.data.id}/approval`, { method: 'PATCH', cookie: managerCookie, body: { decision: 'approved', note: 'Approved' } });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.data.status, 'approved');
+  const revision = await request(`/api/quotations/${quotation.data.id}/revisions`, { method: 'POST', cookie: employeeCookie, body: {} });
+  assert.equal(revision.status, 201);
+  assert.equal(revision.data.revision, 2);
 });

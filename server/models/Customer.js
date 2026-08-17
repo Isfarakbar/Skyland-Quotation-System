@@ -16,6 +16,7 @@ const customerSchema = new mongoose.Schema(
     address: { type: String, default: '', trim: true },
     notes: { type: String, default: '', trim: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   {
@@ -28,5 +29,8 @@ const customerSchema = new mongoose.Schema(
     },
   }
 );
+
+customerSchema.index({ createdBy: 1, createdAt: -1 });
+customerSchema.index({ assignedTo: 1, createdAt: -1 });
 
 export const Customer = mongoose.models.Customer || mongoose.model('Customer', customerSchema);

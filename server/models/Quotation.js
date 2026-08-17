@@ -58,13 +58,28 @@ const quotationSchema = new mongoose.Schema(
       { label: 'Testing and commissioning', percent: 10 },
     ] },
     warranty: { type: warrantySchema, default: () => ({}) },
-    status: { type: String, default: 'draft', enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'] },
+    status: { type: String, default: 'draft', enum: ['draft', 'pending_approval', 'approved', 'sent', 'viewed', 'accepted', 'rejected', 'expired', 'cancelled'], index: true },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+    followUpAt: { type: Date, default: null, index: true },
+    followUpNote: { type: String, default: '', trim: true, maxlength: 500 },
+    templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'QuotationTemplate', default: null },
+    revision: { type: Number, default: 1, min: 1 },
+    revisionOf: { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', default: null, index: true },
+    approval: {
+      requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      requestedAt: { type: Date, default: null },
+      decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      decidedAt: { type: Date, default: null },
+      note: { type: String, default: '', trim: true, maxlength: 500 },
+    },
+    commercialSnapshot: { type: mongoose.Schema.Types.Mixed, default: {} },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     statusHistory: [{
-      status: { type: String, enum: ['draft', 'sent', 'accepted', 'rejected', 'expired'] },
+      status: { type: String, enum: ['draft', 'pending_approval', 'approved', 'sent', 'viewed', 'accepted', 'rejected', 'expired', 'cancelled'] },
       changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
       changedAt: { type: Date, default: Date.now },
+      note: { type: String, default: '', trim: true, maxlength: 500 },
     }],
   },
   {
@@ -77,5 +92,10 @@ const quotationSchema = new mongoose.Schema(
     },
   }
 );
+
+quotationSchema.index({ createdBy: 1, createdAt: -1 });
+quotationSchema.index({ assignedTo: 1, createdAt: -1 });
+quotationSchema.index({ status: 1, followUpAt: 1 });
+quotationSchema.index({ customerId: 1, createdAt: -1 });
 
 export const Quotation = mongoose.models.Quotation || mongoose.model('Quotation', quotationSchema);

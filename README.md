@@ -13,7 +13,7 @@
 
 ## 🌟 Key Highlights & Features
 
-- 📊 **Real-Time Cloud Persistence**: Full backend powered by **Express** and **MongoDB Atlas** (`Mongoose` ORM) with automatic client-side IndexedDB caching for offline resilience.
+- 📊 **Account-Scoped Cloud Data**: Express and MongoDB remain the source of truth. React Query caches safe reads in memory, cancels stale requests, and clears all account data at logout.
 - ⚡ **Pakistan-Focused Quotation Builder**: Select multiple panels, inverters, batteries, accessories, labour and services; capture DISCO, sanctioned load, meter phase, roof type and site survey; then calculate discounts, configurable taxes, totals and per-watt rates.
 - 🛠️ **Complete Installation Scope**: Add structure, protection, cabling, earthing, labour, design, testing, commissioning, transport and optional prosumer/DISCO coordination in one click.
 - 🤝 **Commercial Controls**: Configurable payment milestones, delivery timeline, product and workmanship warranties, regulatory notes, and server-verified totals.
@@ -26,18 +26,18 @@
 - ✉️ **Brevo Transactional Email API**: Direct email dispatch of formatted solar proposals to clients.
 - 💬 **WhatsApp Web API Integration**: Send pre-formatted quotation summaries directly to customer numbers.
 - 📈 **Weekly Rates Management**: Inline editable pricing table for solar panels (with auto ₨/W calculation), inverters, and lithium batteries with bulk save options.
-- 🎨 **State-of-the-Art Glassmorphism UI**: Bespoke CSS design system engineered around Skyland's brand identity (`#073d72` Sapphire Blue & `#fa4c0a` Solar Orange).
+- 🎨 **Premium Responsive UI**: React and TypeScript components engineered around Skyland's dark navy and solar orange identity, with desktop tables, mobile record cards, accessible dialogs, loading skeletons, and actionable errors.
 
 ---
 
 ## 🛠️ Tech Stack
 
 ### **Frontend**
-- **Core**: Vanilla JavaScript (ES6+), HTML5, Custom CSS3 Design System
+- **Core**: React 19, TypeScript, React Router, TanStack Query, React Hook Form, Zod and Radix UI
 - **Build Tool**: Vite v6
-- **Routing**: Client-side Hash Router (SPA)
+- **Routing**: Browser history routes with Vercel SPA fallback; the prior UI remains available temporarily with `?ui=legacy`
 - **PDF Engine**: `html2pdf.js` / `html2canvas`
-- **Offline Storage**: IndexedDB via `idb`
+- **Caching**: Account-scoped in-memory query cache with timeouts, request cancellation, deduplication and safe retries
 
 ### **Backend & Database**
 - **Runtime**: Node.js
@@ -170,7 +170,6 @@ Skyland Quotation System/
    MONGODB_URI=your_mongodb_atlas_connection_string
    BREVO_API_KEY=your_brevo_api_key
    APP_URL=http://localhost:5173
-   JWT_SECRET=generate_a_random_secret_of_at_least_32_characters
    SUPER_ADMIN_EMAIL=admin@skylandenergy.pk
    SUPER_ADMIN_PASSWORD=use_a_unique_strong_password
    CLOUDINARY_CLOUD_NAME=your_cloud_name
@@ -195,9 +194,10 @@ Skyland Quotation System/
 This repository is pre-configured with `vercel.json` and `api/index.js` for zero-configuration Vercel deployment:
 
 1. Import the repository into [Vercel](https://vercel.com).
-2. Add every required value from `.env.example` in Vercel project settings. Production startup validates MongoDB, `APP_URL`, `JWT_SECRET`, Brevo, and all three Cloudinary credentials. Initial super-admin values are needed only for the first bootstrap.
-3. Click **Deploy**, sign in with the bootstrap super-admin account, and approve manager/employee requests from **Team Access**.
-4. After the first super-admin is created, remove `SUPER_ADMIN_PASSWORD` from Vercel and redeploy. Never expose `JWT_SECRET`, `CLOUDINARY_API_SECRET`, MongoDB credentials, or Brevo credentials to Vite/client environment variables.
+2. Add every required value from `.env.example` in Vercel project settings. Authentication uses hashed opaque sessions in MongoDB; no client-readable JWT secret is required.
+3. Set `BOOTSTRAP_ON_START=1` only for the first controlled deployment, sign in with the bootstrap super-admin account, then remove both `BOOTSTRAP_ON_START` and `SUPER_ADMIN_PASSWORD` and redeploy.
+4. Run `npm run migrate:dry` against a backed-up production database, review the record counts, then run `npm run migrate:apply` once. The migration is idempotent and verifies that quotation, customer and product counts do not change.
+5. Rotate any Cloudinary or authentication secrets that have ever been pasted into a chat or committed elsewhere. Store replacement secrets only in Vercel environment settings and redeploy to invalidate old sessions.
 
 The application has four roles: `super_admin`, `admin`, `manager`, and `employee`. Public signup only permits manager and employee requests; neither can sign in until the super admin approves the registration.
 
@@ -210,7 +210,11 @@ npm run check
 npm audit --omit=dev
 ```
 
-The integration suite verifies registration approval, role permissions, settings boundaries, server-side quotation totals, employee ownership, duplicate references, and linked-record deletion protection.
+The integration suite verifies registration approval, role permissions, revocable sessions, settings boundaries, server-side quotation totals, employee ownership isolation, pagination, approval/revision workflows, duplicate references, and linked-record deletion protection.
+
+### Safe rollout and rollback
+
+The React interface is the default. Add `?ui=legacy` to a URL during the transition if a route must be compared with the previous interface. Do not enable `BOOTSTRAP_ON_START` during normal serverless cold starts.
 
 ---
 

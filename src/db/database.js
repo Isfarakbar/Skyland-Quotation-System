@@ -39,18 +39,23 @@ export async function getDB() {
 
 // Helper API fetch
 async function apiFetch(endpoint, options = {}) {
+    const csrf = document.cookie.split('; ').find(row => row.startsWith('skyland_csrf='))?.split('=').slice(1).join('=');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(`${API_BASE}${endpoint}`, {
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
       ...options,
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}), ...(options.headers || {}) },
+      signal: options.signal || controller.signal,
     });
+    clearTimeout(timeout);
     const responseText = res.status === 204 ? '' : await res.text();
     let data = null;
     if (responseText) {
       try { data = JSON.parse(responseText); }
       catch { data = { error: responseText.trim() }; }
     }
-    if (!res.ok) throw new Error(data?.error || `API Error: ${res.status || res.statusText}`);
+    if (!res.ok) throw new Error(typeof data?.error === 'string' ? data.error : data?.error?.message || `API Error: ${res.status || res.statusText}`);
     return data;
 }
 

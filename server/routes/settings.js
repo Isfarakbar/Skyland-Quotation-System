@@ -29,7 +29,7 @@ router.get('/:key', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { key, value } = req.body;
-    const quotationDefaultKeys = ['validityDays', 'advancePercent', 'exchangeRate', 'defaultTerms'];
+    const quotationDefaultKeys = ['validityDays', 'advancePercent', 'exchangeRate', 'defaultTerms', 'approvalThreshold', 'followUpDays'];
     const canManageCompany = ['super_admin', 'admin'].includes(req.user.role);
     if (!canManageCompany && (!hasPermission(req.user, 'settings_manage') || !quotationDefaultKeys.includes(key))) {
       return res.status(403).json({ error: 'You can update quotation defaults only when that access is granted' });

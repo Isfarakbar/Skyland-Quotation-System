@@ -2,11 +2,16 @@ let currentUser = null;
 
 export async function authRequest(endpoint, options = {}) {
   const isForm = options.body instanceof FormData;
+  const csrf = document.cookie.split('; ').find(row => row.startsWith('skyland_csrf='))?.split('=').slice(1).join('=');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
   const response = await fetch(`/api${endpoint}`, {
     credentials: 'same-origin',
     ...options,
-    headers: isForm ? options.headers : { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    signal: options.signal || controller.signal,
+    headers: isForm ? { ...(csrf ? { 'X-CSRF-Token': csrf } : {}), ...(options.headers || {}) } : { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}), ...(options.headers || {}) },
   });
+  clearTimeout(timeout);
   const responseText = response.status === 204 ? '' : await response.text();
   let data = null;
   if (responseText) {
@@ -17,7 +22,7 @@ export async function authRequest(endpoint, options = {}) {
     const fallback = response.status >= 500
       ? 'The Skyland server is temporarily unavailable. Please try again shortly.'
       : `Request failed (${response.status})`;
-    throw new Error(data?.error || fallback);
+    throw new Error(typeof data?.error === 'string' ? data.error : data?.error?.message || fallback);
   }
   return data;
 }
@@ -48,8 +53,9 @@ export async function login(email, password) {
 }
 
 export async function logout() {
-  await authRequest('/auth/logout', { method: 'POST' });
   currentUser = null;
+  await authRequest('/auth/logout', { method: 'POST' });
+  indexedDB.deleteDatabase('skyland-quotation-system');
 }
 
 export async function uploadImage(file, folder = 'products', registration = false) {

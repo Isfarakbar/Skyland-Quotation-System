@@ -14,7 +14,10 @@ import emailRouter from './routes/email.js';
 import authRouter from './routes/auth.js';
 import usersRouter from './routes/users.js';
 import uploadsRouter from './routes/uploads.js';
-import { AUTH_COOKIE, requireAuth } from './middleware/auth.js';
+import auditRouter from './routes/audit.js';
+import templatesRouter from './routes/templates.js';
+import { AUTH_COOKIE, requireAuth, requireCsrf } from './middleware/auth.js';
+import { requestId, safeMessage } from './lib/api.js';
 
 dotenv.config();
 
@@ -22,10 +25,9 @@ if (process.env.NODE_ENV === 'production' || process.env.VERCEL) {
   // Only core authentication/database settings should prevent the API from
   // starting. Email and image integrations already return feature-specific
   // errors when they are not configured, and Vercel supplies deployment URLs.
-  const requiredVariables = ['MONGODB_URI', 'JWT_SECRET'];
+  const requiredVariables = ['MONGODB_URI'];
   const missingVariables = requiredVariables.filter(key => !process.env[key]);
   if (missingVariables.length) throw new Error(`Missing required production environment variables: ${missingVariables.join(', ')}`);
-  if (process.env.JWT_SECRET.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters');
 }
 
 const app = express();
@@ -55,6 +57,13 @@ app.use(cors({
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(cookieParser());
+app.use('/api', (req, res, next) => {
+  req.id = req.get('x-request-id') || requestId();
+  res.set('X-Request-Id', req.id);
+  res.set('Cache-Control', 'private, no-store');
+  next();
+});
+app.use('/api', requireCsrf);
 
 // Keep the platform health check independent from MongoDB so a Vercel probe
 // does not wake the database or wait for bootstrap work.
@@ -72,13 +81,15 @@ app.use('/api', async (req, res, next) => {
   const hasBearerToken = req.get('authorization')?.startsWith('Bearer ');
   if (req.path === '/auth/me' && !req.cookies?.[AUTH_COOKIE] && !hasBearerToken) return next();
   try {
-    initializationPromise ||= connectDB().then(seedMongoDB);
+    initializationPromise ||= connectDB().then(() => (
+      process.env.NODE_ENV === 'test' || process.env.BOOTSTRAP_ON_START === '1' ? seedMongoDB() : undefined
+    ));
     await initializationPromise;
     next();
   } catch (error) {
     initializationPromise = null;
     console.error('Database connection middleware error:', error);
-    res.status(500).json({ error: 'Database connection error: ' + error.message });
+    res.status(503).json({ error: { code: 'DATABASE_UNAVAILABLE', message: 'The data service is temporarily unavailable', requestId: req.id } });
   }
 });
 
@@ -94,16 +105,21 @@ app.use('/api/quotations', quotationsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/email', emailRouter);
 app.use('/api/users', usersRouter);
+app.use('/api/audit', auditRouter);
+app.use('/api/templates', templatesRouter);
 
-app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint not found' }));
-app.use((error, _req, res, _next) => {
-  console.error(error);
-  if (error?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'Image must be 5MB or smaller' });
-  res.status(error?.status || 500).json({ error: process.env.NODE_ENV === 'production' ? 'Unexpected server error' : error.message });
+app.use('/api', (req, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'API endpoint not found', requestId: req.id } }));
+app.use((error, req, res, _next) => {
+  if (error?.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: { code: 'UPLOAD_TOO_LARGE', message: 'Image must be 5MB or smaller', requestId: req.id } });
+  const status = error?.status || (error?.code === 11000 ? 409 : ['CastError', 'ValidationError'].includes(error?.name) ? 400 : 500);
+  if (status >= 500) console.error(error);
+  const message = process.env.NODE_ENV === 'production' ? safeMessage(error) : (error.message || safeMessage(error));
+  const code = error?.code === 11000 ? 'CONFLICT' : typeof error?.code === 'string' ? error.code : (status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_INVALID');
+  res.status(status).json({ error: { code, message, ...(error?.fields ? { fields: error.fields } : {}), requestId: req.id } });
 });
 
 // Start Server in local dev environment
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL && process.env.SKYLAND_FIXTURE !== '1') {
   app.listen(PORT, () => {
     console.log(`🚀 Express API Server running on http://localhost:${PORT}`);
   });

@@ -14,6 +14,14 @@ const productSchema = new mongoose.Schema(
     inverterType: { type: String, default: '' },
     image: { type: String, default: '' },
     specifications: { type: mongoose.Schema.Types.Mixed, default: {} },
+    active: { type: Boolean, default: true, index: true },
+    effectiveFrom: { type: Date, default: Date.now },
+    priceHistory: [{
+      unitPrice: { type: Number, min: 0 },
+      pricePerWatt: { type: Number, min: 0 },
+      changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+      changedAt: { type: Date, default: Date.now },
+    }],
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -27,5 +35,7 @@ const productSchema = new mongoose.Schema(
     },
   }
 );
+
+productSchema.index({ active: 1, category: 1, name: 1 });
 
 export const Product = mongoose.models.Product || mongoose.model('Product', productSchema);
