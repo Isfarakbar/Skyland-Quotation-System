@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { User } from '../models/User.js';
+import { User, getEffectivePermissions } from '../models/User.js';
 
 export const AUTH_COOKIE = 'skyland_session';
 
@@ -43,6 +43,19 @@ export async function requireAuth(req, res, next) {
 export function allowRoles(...roles) {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'You do not have permission to perform this action' });
+    }
+    next();
+  };
+}
+
+export function hasPermission(user, permission) {
+  return Boolean(getEffectivePermissions(user)[permission]);
+}
+
+export function allowPermission(permission) {
+  return (req, res, next) => {
+    if (!req.user || !hasPermission(req.user, permission)) {
       return res.status(403).json({ error: 'You do not have permission to perform this action' });
     }
     next();

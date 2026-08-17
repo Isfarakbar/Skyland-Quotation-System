@@ -3,13 +3,14 @@
 // ============================================
 import { navigate } from '../router.js';
 import { createIcon } from './icons.js';
-import { getCurrentUser, logout } from '../auth.js';
+import { getCurrentUser, hasPermission, logout } from '../auth.js';
 import { escapeHtml } from '../utils/helpers.js';
 
 export function renderSidebar() {
   const user = getCurrentUser();
   const canManageUsers = ['super_admin', 'admin'].includes(user?.role);
-  const canManageCatalog = ['super_admin', 'admin', 'manager'].includes(user?.role);
+  const canViewRates = hasPermission('rates_view');
+  const canManageSettings = hasPermission('settings_manage');
   const sidebar = document.createElement('aside');
   sidebar.className = 'sidebar';
   sidebar.id = 'sidebar';
@@ -52,16 +53,15 @@ export function renderSidebar() {
         <span>All Quotations</span>
       </a>
 
-      ${canManageCatalog ? `<div class="sidebar-section-label">Management</div>
-      <a class="sidebar-link" data-route="/rates" href="#/rates">
+      ${canViewRates || canManageSettings ? `<div class="sidebar-section-label">Management</div>` : ''}
+      ${canViewRates ? `<a class="sidebar-link" data-route="/rates" href="#/rates">
         ${createIcon('trending-up')}
         <span>Price List</span>
-      </a>
-      <a class="sidebar-link" data-route="/settings" href="#/settings">
+      </a>` : ''}
+      ${canManageSettings ? `<a class="sidebar-link" data-route="/settings" href="#/settings">
         ${createIcon('settings')}
         <span>Settings</span>
-      </a>
-      ` : ''}
+      </a>` : ''}
       ${canManageUsers ? `<a class="sidebar-link" data-route="/users" href="#/users">${createIcon('users')}<span>Team Access</span></a>` : ''}
     </nav>
 

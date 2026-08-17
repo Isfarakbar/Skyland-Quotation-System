@@ -5,7 +5,7 @@ import { getAllProducts, getAllCustomers, getAllQuotations } from '../db/databas
 import { formatCurrency, formatCurrencyShort, formatDate, STATUS_CONFIG, SYSTEM_TYPES, escapeHtml } from '../utils/helpers.js';
 import { createIcon } from '../components/icons.js';
 import { navigate } from '../router.js';
-import { hasRole } from '../auth.js';
+import { hasPermission } from '../auth.js';
 
 export async function renderDashboard() {
   const container = document.getElementById('page-content');
@@ -93,13 +93,13 @@ export async function renderDashboard() {
           <button class="btn btn-primary" data-action="new-quotation">
             ${createIcon('file-plus')} Create Quotation
           </button>
-          ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-secondary" data-action="add-product">
+          ${hasPermission('products_manage') ? `<button class="btn btn-secondary" data-action="add-product">
             ${createIcon('plus')} Add Product
           </button>` : ''}
           <button class="btn btn-secondary" data-action="add-customer">
             ${createIcon('plus')} Add Customer
           </button>
-          ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-outline" data-action="view-rates">
+          ${hasPermission('rates_view') ? `<button class="btn btn-outline" data-action="view-rates">
             ${createIcon('trending-up')} View Rates
           </button>` : ''}
         </div>

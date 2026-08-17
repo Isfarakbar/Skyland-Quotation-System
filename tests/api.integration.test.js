@@ -130,6 +130,35 @@ test('catalog and settings permissions follow the role matrix', async () => {
   assert.equal((await request('/api/settings', { method: 'POST', cookie: managerCookie, body: { key: 'companyName', value: 'Changed' } })).status, 403);
 });
 
+test('super admin can grant and revoke individual manager or employee access', async () => {
+  const employee = await User.findOne({ email: 'employee@skyland.test' });
+  const [superCookie, originalEmployeeCookie] = await Promise.all([
+    login('superadmin@skyland.test'), login('employee@skyland.test'),
+  ]);
+  assert.equal((await request('/api/products', { method: 'POST', cookie: originalEmployeeCookie, body: { name: 'Blocked Product', category: 'other', unitPrice: 100 } })).status, 403);
+
+  const permissions = {
+    products_manage: true, products_delete: false, rates_view: true, rates_manage: true,
+    customers_manage_all: false, customers_delete: false, quotations_manage_all: false,
+    quotations_delete: false, quotations_send_all: false, settings_manage: false,
+  };
+  const granted = await request(`/api/users/${employee.id}/permissions`, { method: 'PATCH', cookie: superCookie, body: { permissions } });
+  assert.equal(granted.status, 200);
+  assert.equal(granted.data.user.effectivePermissions.products_manage, true);
+  assert.equal((await request('/api/products', { method: 'POST', cookie: originalEmployeeCookie, body: { name: 'Expired Session Product', category: 'other', unitPrice: 100 } })).status, 401);
+
+  const employeeCookie = await login('employee@skyland.test');
+  const product = await request('/api/products', { method: 'POST', cookie: employeeCookie, body: { name: 'Granted Product', category: 'other', unitPrice: 100 } });
+  assert.equal(product.status, 201);
+  assert.equal((await request(`/api/products/${product.data.id}/rate`, { method: 'PATCH', cookie: employeeCookie, body: { unitPrice: 250 } })).status, 200);
+  assert.equal((await request(`/api/products/${product.data.id}`, { method: 'DELETE', cookie: employeeCookie })).status, 403);
+
+  assert.equal((await request(`/api/users/${employee.id}/permissions`, { method: 'PATCH', cookie: superCookie, body: { permissions: {} } })).status, 200);
+  const revokedCookie = await login('employee@skyland.test');
+  assert.equal((await request('/api/products', { method: 'POST', cookie: revokedCookie, body: { name: 'Revoked Product', category: 'other', unitPrice: 100 } })).status, 403);
+  await mongoose.connection.collection('products').deleteOne({ _id: new mongoose.Types.ObjectId(product.data.id) });
+});
+
 test('quotation totals, ownership, references, and linked deletes are protected', async () => {
   await createActiveUser({ firstName: 'Second', email: 'second.employee@skyland.test', role: 'employee', cnic: 'AUDIT-EMPLOYEE-2' });
   const [employeeCookie, secondEmployeeCookie, managerCookie] = await Promise.all([

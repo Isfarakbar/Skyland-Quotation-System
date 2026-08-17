@@ -1,7 +1,7 @@
 import express from 'express';
 import { Customer } from '../models/Customer.js';
 import { Quotation } from '../models/Quotation.js';
-import { allowRoles } from '../middleware/auth.js';
+import { allowPermission, hasPermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -42,8 +42,8 @@ router.put('/:id', async (req, res) => {
   try {
     const existing = await Customer.findById(req.params.id);
     if (!existing) return res.status(404).json({ error: 'Customer not found' });
-    if (req.user.role === 'employee' && existing.createdBy && existing.createdBy.toString() !== req.user.id) {
-      return res.status(403).json({ error: 'Employees can update customer records they created only' });
+    if (!hasPermission(req.user, 'customers_manage_all') && existing.createdBy && existing.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'You can update customer records you created only' });
     }
     const { createdBy: _createdBy, updatedBy: _updatedBy, ...updates } = req.body;
     const customer = await Customer.findByIdAndUpdate(req.params.id, { ...updates, updatedBy: req.user.id }, {
@@ -58,7 +58,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE customer
-router.delete('/:id', allowRoles('super_admin', 'admin', 'manager'), async (req, res) => {
+router.delete('/:id', allowPermission('customers_delete'), async (req, res) => {
   try {
     if (await Quotation.exists({ customerId: req.params.id })) {
       return res.status(409).json({ error: 'This customer has quotations and cannot be deleted. Remove the related quotations first or retain the customer record.' });
