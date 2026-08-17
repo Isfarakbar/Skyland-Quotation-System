@@ -8,8 +8,15 @@ const customerSchema = new mongoose.Schema(
     email: { type: String, default: '', trim: true },
     city: { type: String, required: true, trim: true },
     projectType: { type: String, default: 'residential', trim: true },
+    serviceInterest: {
+      type: String,
+      enum: ['solar', 'battery-storage', 'energy-audit', 'energy-management', 'mep', 'pfi-harmonic-filters', 'operations-maintenance'],
+      default: 'solar',
+    },
     address: { type: String, default: '', trim: true },
     notes: { type: String, default: '', trim: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   {
     timestamps: true,

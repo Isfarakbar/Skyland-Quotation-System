@@ -9,6 +9,9 @@ const DB_NAME = 'skyland-quotation-system';
 const DB_VERSION = 1;
 
 let dbInstance = null;
+let settingsCache = null;
+let settingsCacheTime = 0;
+let settingsRequest = null;
 
 export async function getDB() {
   if (dbInstance) return dbInstance;
@@ -36,20 +39,19 @@ export async function getDB() {
 
 // Helper API fetch
 async function apiFetch(endpoint, options = {}) {
-  try {
     const res = await fetch(`${API_BASE}${endpoint}`, {
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       ...options,
     });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.error || `API Error: ${res.statusText}`);
+    const responseText = res.status === 204 ? '' : await res.text();
+    let data = null;
+    if (responseText) {
+      try { data = JSON.parse(responseText); }
+      catch { data = { error: responseText.trim() }; }
     }
-    return await res.json();
-  } catch (err) {
-    console.warn(`API call to ${endpoint} failed, falling back to local database:`, err.message);
-    return null; // Signals fallback
-  }
+    if (!res.ok) throw new Error(data?.error || `API Error: ${res.status || res.statusText}`);
+    return data;
 }
 
 // ---- Products CRUD ----
@@ -270,12 +272,23 @@ export async function deleteQuotation(id) {
 }
 
 // ---- Settings ----
+export async function getAllSettings({ fresh = false } = {}) {
+  if (!fresh && settingsCache && Date.now() - settingsCacheTime < 60_000) return settingsCache;
+  if (settingsRequest) return settingsRequest;
+
+  settingsRequest = apiFetch('/settings')
+    .then(rows => {
+      settingsCache = Object.fromEntries((rows || []).map(row => [row.key, row.value]));
+      settingsCacheTime = Date.now();
+      return settingsCache;
+    })
+    .finally(() => { settingsRequest = null; });
+  return settingsRequest;
+}
+
 export async function getSetting(key) {
-  const remote = await apiFetch(`/settings/${key}`);
-  if (remote && remote.value !== undefined) return remote.value;
-  const db = await getDB();
-  const setting = await db.get('settings', key);
-  return setting ? setting.value : null;
+  const settings = await getAllSettings();
+  return settings[key] ?? null;
 }
 
 export async function setSetting(key, value) {
@@ -285,14 +298,16 @@ export async function setSetting(key, value) {
   });
   const db = await getDB();
   await db.put('settings', { key, value });
+  settingsCache = { ...(settingsCache || {}), [key]: value };
+  settingsCacheTime = Date.now();
   return remote || { key, value };
 }
 
 // ---- Email via Brevo ----
-export async function sendQuotationEmail({ toEmail, toName, quotationNumber, systemSize, systemType, grandTotal, htmlContent }) {
+export async function sendQuotationEmail(quotationId) {
   return apiFetch('/email/send-quotation', {
     method: 'POST',
-    body: JSON.stringify({ toEmail, toName, quotationNumber, systemSize, systemType, grandTotal, htmlContent }),
+    body: JSON.stringify({ quotationId }),
   });
 }
 
@@ -315,27 +330,41 @@ export async function exportAllData() {
 }
 
 export async function importAllData(data) {
-  for (const p of (data.products || [])) {
-    delete p._id; delete p.id;
-    await addProduct(p);
+  if (!data || !Array.isArray(data.products) || !Array.isArray(data.customers) || !Array.isArray(data.quotations)) {
+    throw new Error('Backup must contain products, customers, and quotations arrays');
   }
-  for (const c of (data.customers || [])) {
-    delete c._id; delete c.id;
-    await addCustomer(c);
+  const productIds = new Map();
+  const customerIds = new Map();
+  for (const source of data.products) {
+    const oldId = source.id || source._id;
+    const p = { ...source };
+    delete p._id; delete p.id; delete p.createdBy; delete p.updatedBy;
+    const newId = await addProduct(p);
+    if (oldId) productIds.set(String(oldId), newId);
   }
-  for (const q of (data.quotations || [])) {
-    delete q._id; delete q.id;
+  for (const source of data.customers) {
+    const oldId = source.id || source._id;
+    const c = { ...source };
+    delete c._id; delete c.id; delete c.createdBy; delete c.updatedBy;
+    const newId = await addCustomer(c);
+    if (oldId) customerIds.set(String(oldId), newId);
+  }
+  for (const source of data.quotations) {
+    const q = { ...source };
+    delete q._id; delete q.id; delete q.createdBy; delete q.updatedBy; delete q.statusHistory;
+    q.customerId = customerIds.get(String(source.customerId)) || source.customerId;
+    q.items = (source.items || []).map(item => ({ ...item, productId: productIds.get(String(item.productId)) || item.productId || '' }));
     await addQuotation(q);
   }
 }
 
 export async function clearAllData() {
-  const products = await getAllProducts();
-  for (const p of products) await deleteProduct(p.id);
+  const quotations = await getAllQuotations();
+  for (const q of quotations) await deleteQuotation(q.id);
 
   const customers = await getAllCustomers();
   for (const c of customers) await deleteCustomer(c.id);
 
-  const quotations = await getAllQuotations();
-  for (const q of quotations) await deleteQuotation(q.id);
+  const products = await getAllProducts();
+  for (const p of products) await deleteProduct(p.id);
 }

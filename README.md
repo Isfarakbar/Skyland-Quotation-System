@@ -1,4 +1,4 @@
-# ⚡ Skyland Energy — Solar Sales Quotation & Inventory Management System
+# ⚡ Skyland Energy — Pakistan Solar Quotation System
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green.svg)
@@ -7,14 +7,18 @@
 ![Vite](https://img.shields.io/badge/Vite-v6-purple.svg)
 ![Brevo](https://img.shields.io/badge/Brevo-Email%20API-blue.svg)
 
-> A modern, full-stack, enterprise-grade Sales Quotation & Inventory Management System built for **Skyland Energy**. Designed to streamline the solar sales workflow—from product inventory and customer relationship management to automated 16-item Bill of Quantities (BOQ) calculations, PDF generation, WhatsApp messaging, and cloud email dispatch via Brevo API.
+> A modern, full-stack sales quotation and product price catalog built for **Skyland Energy**. It streamlines the solar sales workflow—from reusable panel, inverter, battery, accessory, and service selection to customer management, server-verified totals, PDF generation, WhatsApp messaging, and cloud email dispatch through Brevo.
 
 ---
 
 ## 🌟 Key Highlights & Features
 
 - 📊 **Real-Time Cloud Persistence**: Full backend powered by **Express** and **MongoDB Atlas** (`Mongoose` ORM) with automatic client-side IndexedDB caching for offline resilience.
-- ⚡ **Automated BOQ Quotation Builder**: 5-step wizard that auto-populates 16 standard BOQ line items, auto-calculates solar panel counts from system size (kW), computes subtotal, discounts, grand totals, and per-watt rates.
+- ⚡ **Pakistan-Focused Quotation Builder**: Select multiple panels, inverters, batteries, accessories, labour and services; capture DISCO, sanctioned load, meter phase, roof type and site survey; then calculate discounts, configurable taxes, totals and per-watt rates.
+- 🛠️ **Complete Installation Scope**: Add structure, protection, cabling, earthing, labour, design, testing, commissioning, transport and optional prosumer/DISCO coordination in one click.
+- 🤝 **Commercial Controls**: Configurable payment milestones, delivery timeline, product and workmanship warranties, regulatory notes, and server-verified totals.
+- 🚀 **Fast Route Loading**: Page-level code splitting keeps the initial Vercel browser bundle smaller and loads feature screens on demand.
+- 🧾 **No Stock Tracking**: The product area is a reusable price catalog. It does not maintain inventory quantities or stock movements.
 - 📦 **Product Catalog Management**: Dynamic grid view supporting solar panels, inverters (on-grid/hybrid), batteries, structures, cables, and accessories with image compression and upload handling.
 - 👥 **Customer CRM**: Complete customer lifecycle management with WhatsApp one-click contact links, search, filtering, and project classification (Residential / Commercial / Industrial).
 - 📄 **Branded PDF Generation**: Instant client-side A4 PDF proposal creation matching official Skyland Energy corporate templates.
@@ -93,7 +97,7 @@ graph TB
 
 | 5-Step Quotation Builder | Rates Management |
 |:---:|:---:|
-| BOQ auto-calculations, pricing, terms & preview | Weekly panel & inverter rate updates |
+| Project profile, equipment, installation scope, commercials & proposal | Weekly panel & inverter rate updates |
 
 ---
 
@@ -164,6 +168,13 @@ Skyland Quotation System/
    ```env
    MONGODB_URI=your_mongodb_atlas_connection_string
    BREVO_API_KEY=your_brevo_api_key
+   APP_URL=http://localhost:5173
+   JWT_SECRET=generate_a_random_secret_of_at_least_32_characters
+   SUPER_ADMIN_EMAIL=admin@skylandenergy.pk
+   SUPER_ADMIN_PASSWORD=use_a_unique_strong_password
+   CLOUDINARY_CLOUD_NAME=your_cloud_name
+   CLOUDINARY_API_KEY=your_numeric_api_key
+   CLOUDINARY_API_SECRET=your_api_secret
    PORT=5000
    ```
 
@@ -171,7 +182,7 @@ Skyland Quotation System/
    ```bash
    npm run dev
    ```
-   - **Frontend UI**: `http://localhost:3000`
+   - **Frontend UI**: `http://localhost:5173`
    - **Express API**: `http://localhost:5000`
 
 ---
@@ -183,10 +194,22 @@ Skyland Quotation System/
 This repository is pre-configured with `vercel.json` and `api/index.js` for zero-configuration Vercel deployment:
 
 1. Import the repository into [Vercel](https://vercel.com).
-2. Add Environment Variables in Vercel project settings:
-   - `MONGODB_URI`
-   - `BREVO_API_KEY`
-3. Click **Deploy**.
+2. Add every required value from `.env.example` in Vercel project settings. Production startup validates MongoDB, `APP_URL`, `JWT_SECRET`, Brevo, and all three Cloudinary credentials. Initial super-admin values are needed only for the first bootstrap.
+3. Click **Deploy**, sign in with the bootstrap super-admin account, and approve manager/employee requests from **Team Access**.
+4. After the first super-admin is created, remove `SUPER_ADMIN_PASSWORD` from Vercel and redeploy. Never expose `JWT_SECRET`, `CLOUDINARY_API_SECRET`, MongoDB credentials, or Brevo credentials to Vite/client environment variables.
+
+The application has four roles: `super_admin`, `admin`, `manager`, and `employee`. Public signup only permits manager and employee requests; neither can sign in until the super admin approves the registration.
+
+### Verification
+
+Run the complete production build, isolated MongoDB integration suite, server syntax checks, and dependency audit before deployment:
+
+```bash
+npm run check
+npm audit --omit=dev
+```
+
+The integration suite verifies registration approval, role permissions, settings boundaries, server-side quotation totals, employee ownership, duplicate references, and linked-record deletion protection.
 
 ---
 
@@ -194,7 +217,7 @@ This repository is pre-configured with `vercel.json` and `api/index.js` for zero
 
 | Method | Endpoint | Description |
 |:---|:---|:---|
-| `GET` | `/api/products` | Retrieve all inventory products |
+| `GET` | `/api/products` | Retrieve all product catalog items |
 | `POST` | `/api/products` | Create a new product |
 | `PUT` | `/api/products/:id` | Update product details or price |
 | `DELETE` | `/api/products/:id` | Remove product |

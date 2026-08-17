@@ -1,25 +1,25 @@
 // ============================================
 // SKYLAND ENERGY — Quotations List Page
 // ============================================
-import { getAllQuotations, getAllCustomers, deleteQuotation, updateQuotation, getQuotation, getCustomer } from '../db/database.js';
-import { formatCurrency, formatDate, STATUS_CONFIG, SYSTEM_TYPES, matchesSearch, debounce } from '../utils/helpers.js';
+import { getAllQuotations, getAllCustomers, deleteQuotation, updateQuotation, getQuotation, getCustomer, getSetting, sendQuotationEmail } from '../db/database.js';
+import { formatCurrency, formatDate, STATUS_CONFIG, SYSTEM_TYPES, matchesSearch, debounce, escapeHtml } from '../utils/helpers.js';
 import { createIcon } from '../components/icons.js';
 import { showConfirm } from '../components/confirm-dialog.js';
 import { toast } from '../components/toast.js';
 import { navigate } from '../router.js';
 import { toggleMobileSidebar } from '../components/sidebar.js';
 import { sendQuotationWhatsApp } from '../utils/whatsapp.js';
-import { generateQuotationPDF } from '../utils/pdf-generator.js';
 import { openModal, closeModal } from '../components/modal.js';
 import { DEFAULT_TERMS } from '../db/seed-data.js';
+import { hasRole } from '../auth.js';
 
 let currentFilter = 'all';
 let searchQuery = '';
 
 export async function renderQuotations(params) {
   // If a specific quotation ID is passed, show the detail/preview
-  if (params && !isNaN(parseInt(params))) {
-    return showQuotationDetail(parseInt(params));
+  if (params) {
+    return showQuotationDetail(params);
   }
 
   const container = document.getElementById('page-content');
@@ -139,9 +139,9 @@ function renderQuotationTable(quotations, customers) {
             const status = STATUS_CONFIG[q.status] || STATUS_CONFIG.draft;
             return `
               <tr>
-                <td><strong>${q.quotationNumber || '-'}</strong></td>
-                <td>${customer?.name || 'Unknown'}</td>
-                <td>${q.systemSize || '-'} KW ${SYSTEM_TYPES[q.systemType] || ''}</td>
+                <td><strong>${escapeHtml(q.quotationNumber || '-')}</strong></td>
+                <td>${escapeHtml(customer?.name || 'Unknown')}</td>
+                <td>${escapeHtml(q.systemSize || '-')} KW ${escapeHtml(SYSTEM_TYPES[q.systemType] || '')}</td>
                 <td><strong>${formatCurrency(q.grandTotal)}</strong></td>
                 <td><span class="badge ${status.class}">${status.label}</span></td>
                 <td>${formatDate(q.createdAt)}</td>
@@ -162,9 +162,9 @@ function renderQuotationTable(quotations, customers) {
                     <button class="btn btn-ghost btn-icon btn-sm" data-action="status" data-id="${q.id}" data-tooltip="Update Status">
                       ${createIcon('refresh')}
                     </button>
-                    <button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${q.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
+                    ${hasRole('super_admin', 'admin', 'manager') ? `<button class="btn btn-ghost btn-icon btn-sm" data-action="delete" data-id="${q.id}" data-tooltip="Delete" style="color: var(--color-danger-light);">
                       ${createIcon('trash')}
-                    </button>
+                    </button>` : ''}
                   </div>
                 </td>
               </tr>
@@ -187,13 +187,13 @@ function bindActions(container, quotations, customers) {
 
   container.querySelectorAll('[data-action="duplicate"]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const q = quotations.find(q => q.id === parseInt(btn.dataset.id));
+      const q = quotations.find(q => String(q.id) === btn.dataset.id);
       if (!q) return;
       const { addQuotation } = await import('../db/database.js');
       const newQ = { ...q };
       delete newQ.id;
       newQ.status = 'draft';
-      newQ.quotationNumber = q.quotationNumber + '-COPY';
+      newQ.quotationNumber = `${q.quotationNumber}-COPY-${Date.now().toString().slice(-5)}`;
       newQ.createdAt = new Date().toISOString();
       await addQuotation(newQ);
       toast.success('Quotation duplicated');
@@ -203,7 +203,7 @@ function bindActions(container, quotations, customers) {
 
   container.querySelectorAll('[data-action="whatsapp"]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const q = quotations.find(q => q.id === parseInt(btn.dataset.id));
+      const q = quotations.find(q => String(q.id) === btn.dataset.id);
       const customer = customers.find(c => c.id === q?.customerId);
       if (q && customer) sendQuotationWhatsApp(customer, q);
     });
@@ -211,7 +211,7 @@ function bindActions(container, quotations, customers) {
 
   container.querySelectorAll('[data-action="status"]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      const q = quotations.find(q => q.id === parseInt(btn.dataset.id));
+      const q = quotations.find(q => String(q.id) === btn.dataset.id);
       if (!q) return;
       const statuses = ['draft', 'sent', 'accepted', 'rejected', 'expired'];
       const formEl = document.createElement('div');
@@ -251,9 +251,8 @@ function bindActions(container, quotations, customers) {
         confirmText: 'Delete',
       });
       if (confirmed) {
-        await deleteQuotation(parseInt(btn.dataset.id));
-        toast.success('Quotation deleted');
-        renderQuotations();
+        try { await deleteQuotation(btn.dataset.id); toast.success('Quotation deleted'); renderQuotations(); }
+        catch (error) { toast.error(error.message); }
       }
     });
   });
@@ -273,21 +272,33 @@ async function showQuotationDetail(id) {
   const subtotal = (q.items || []).reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
   const discountAmount = q.discountType === 'percent' ? subtotal * ((q.discount || 0) / 100) : (q.discount || 0);
   const grandTotal = q.grandTotal || (subtotal - discountAmount);
+  const taxAmount = Number(q.taxAmount || 0);
   const terms = q.termsAndConditions || DEFAULT_TERMS;
   const dateStr = new Date(q.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const [companyName, companyAddress, companyPhone, companyWhatsapp, companyEmail, companyWebsite, companyTagline, companyCredentials] = await Promise.all([
+    getSetting('companyName'), getSetting('companyAddress'), getSetting('companyPhone'), getSetting('companyWhatsapp'),
+    getSetting('companyEmail'), getSetting('companyWebsite'), getSetting('companyTagline'), getSetting('companyCredentials'),
+  ]);
+  const company = {
+    name: companyName || 'Skyland Energy (Pvt.) Ltd', address: companyAddress || '286 H-1, Johar Town, Lahore, Pakistan',
+    phone: companyPhone || '+92 42 32353019', whatsapp: companyWhatsapp || '+92 310 8134361',
+    email: companyEmail || 'info@theskylandenergy.com', website: companyWebsite || 'https://www.theskylandenergy.com',
+    tagline: companyTagline || 'Your Energy Management Company', credentials: companyCredentials || 'AEDB & PEC Approved',
+  };
 
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
         <button class="btn btn-ghost" id="back-btn">${createIcon('arrow-left')} Back</button>
         <div>
-          <h1 class="page-title">${q.quotationNumber}</h1>
-          <p class="page-subtitle">${customer?.name || ''} • <span class="badge ${status.class}">${status.label}</span></p>
+          <h1 class="page-title">${escapeHtml(q.quotationNumber)}</h1>
+          <p class="page-subtitle">${escapeHtml(customer?.name || '')} • <span class="badge ${status.class}">${escapeHtml(status.label)}</span></p>
         </div>
       </div>
       <div class="page-header-right">
         <button class="btn btn-secondary" id="edit-btn">${createIcon('edit')} Edit</button>
         <button class="btn btn-outline" id="pdf-btn">${createIcon('download')} PDF</button>
+        <button class="btn btn-outline" id="email-btn" ${customer?.email ? '' : 'disabled'} title="${customer?.email ? `Email to ${escapeHtml(customer.email)}` : 'Add a customer email address first'}">${createIcon('mail')} Email</button>
         <button class="btn btn-whatsapp" id="wa-btn">${createIcon('whatsapp')} WhatsApp</button>
         <button class="btn btn-ghost" id="print-btn">${createIcon('printer')} Print</button>
       </div>
@@ -296,26 +307,39 @@ async function showQuotationDetail(id) {
     <div class="page-body">
       <div class="quotation-preview" id="quotation-preview">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
-          <img src="/Skyland Recreated Logo.svg" alt="Skyland Energy" style="height: 60px;" />
-          <div style="text-align: right; color: #666; font-size: 0.85rem;">
+          <div>
+            <img src="/Skyland Recreated Logo.svg" alt="Skyland Energy" style="height: 60px;" />
+            <div style="margin-top: 6px; color: #073d72; font-size: 0.72rem; font-weight: 700;">${escapeHtml(company.tagline)} · ${escapeHtml(company.credentials)}</div>
+          </div>
+          <div style="text-align: right; color: #555; font-size: 0.75rem; line-height: 1.55; max-width: 310px;">
+            <strong style="color: #073d72;">${escapeHtml(company.name)}</strong><br>
+            ${escapeHtml(company.address)}<br>
+            ${escapeHtml(company.phone)} · WhatsApp ${escapeHtml(company.whatsapp)}<br>
+            ${escapeHtml(company.email)} · ${escapeHtml(company.website.replace(/^https?:\/\//, ''))}
             <div>${dateStr}</div>
-            <div>Ref: ${q.quotationNumber}</div>
+            <div>Ref: ${escapeHtml(q.quotationNumber)}</div>
           </div>
         </div>
 
         <h2 style="font-size: 1.3rem; color: #073d72; margin-bottom: 1rem; text-align: center; border-bottom: 2px solid #073d72; padding-bottom: 0.5rem;">
-          Solar Proposal
+          TECHNICAL & COMMERCIAL PROPOSAL
         </h2>
 
         <div style="margin-bottom: 1.5rem; line-height: 1.8;">
-          <strong>${customer?.name || 'Customer'}</strong><br>
-          ${customer?.city || ''}<br><br>
-          Dear Sir,<br>
-          We are pleased to submit you the requested solar proposal. Please feel free to contact with us for any further suggestions or queries:
+          <strong>${escapeHtml(customer?.name || 'Customer')}</strong><br>
+          ${escapeHtml(customer?.city || '')}<br><br>
+          Dear Valued Customer,<br>
+          We are pleased to submit the requested solar proposal. Please contact our team with any questions or requested adjustments.
+        </div>
+
+        <div style="background:#f3f7fb; border-left:4px solid #073d72; padding:12px 16px; margin-bottom:1.5rem; font-size:.8rem; line-height:1.65;">
+          <strong style="color:#073d72;">Project Summary</strong><br>
+          ${escapeHtml(q.systemSize)} kW ${escapeHtml(systemLabel)} · DISCO: ${escapeHtml(q.disco || 'To be confirmed')} · Sanctioned load: ${q.sanctionedLoad ? `${q.sanctionedLoad} kW` : 'To be confirmed'}<br>
+          Meter: ${escapeHtml((q.meterPhase || 'unknown').replace('-', ' '))} · Installation: ${escapeHtml((q.roofType || 'rcc').replaceAll('-', ' '))} · Prosumer coordination: ${q.prosumerIncluded ? 'Included' : 'Excluded'}
         </div>
 
         <h3 style="color: #073d72; margin-bottom: 1rem;">
-          Quotation for ${q.systemSize}-KW ${systemLabel} Solar System:
+          Quotation for ${escapeHtml(q.systemSize)}-KW ${escapeHtml(systemLabel)} Solar System:
         </h3>
 
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 1.5rem;">
@@ -331,13 +355,15 @@ async function showQuotationDetail(id) {
             ${(q.items || []).filter(i => i.name).map((item, idx) => `
               <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 1 ? 'background: #f9fafb;' : ''}">
                 <td style="padding: 8px 12px; color: #666;">${idx + 1}</td>
-                <td style="padding: 8px 12px;">${item.name}</td>
+                <td style="padding: 8px 12px;">${escapeHtml(item.name)}</td>
                 <td style="padding: 8px 12px; text-align: center;">${item.quantity || '-'}</td>
                 <td style="padding: 8px 12px; text-align: right; font-weight: 500;">${formatCurrency(item.quantity * item.unitPrice).replace('PKR ', '')}</td>
               </tr>
             `).join('')}
           </tbody>
           <tfoot>
+            ${discountAmount > 0 ? `<tr><td colspan="3" style="padding:8px 12px; text-align:right;">Subtotal / Discount</td><td style="padding:8px 12px; text-align:right;">${formatCurrency(subtotal).replace('PKR ', '')} / -${formatCurrency(discountAmount).replace('PKR ', '')}</td></tr>` : ''}
+            ${taxAmount > 0 ? `<tr><td colspan="3" style="padding:8px 12px; text-align:right;">${escapeHtml(q.taxLabel || 'Applicable taxes')} (${q.taxRate || 0}%)</td><td style="padding:8px 12px; text-align:right;">${formatCurrency(taxAmount).replace('PKR ', '')}</td></tr>` : ''}
             <tr style="background: #073d72; color: #fff;">
               <td colspan="3" style="padding: 10px 12px; text-align: right; font-weight: 700;">Total</td>
               <td style="padding: 10px 12px; text-align: right; font-weight: 700;">${formatCurrency(grandTotal).replace('PKR ', '')}/-</td>
@@ -345,16 +371,23 @@ async function showQuotationDetail(id) {
           </tfoot>
         </table>
 
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin:1.5rem 0; font-size:.82rem;">
+          <div><h3 style="color:#073d72; margin-bottom:.5rem;">Delivery & Payment</h3><p>Estimated installation: ${q.installationDays || 7} days.</p><ul style="padding-left:1.1rem;">${(q.paymentSchedule || []).map(item => `<li>${escapeHtml(item.label)}: ${item.percent}%</li>`).join('')}</ul></div>
+          <div><h3 style="color:#073d72; margin-bottom:.5rem;">Warranty</h3><ul style="padding-left:1.1rem;"><li>Panels: ${escapeHtml(q.warranty?.panels || 'As per manufacturer')}</li><li>Inverter: ${escapeHtml(q.warranty?.inverter || 'As per manufacturer')}</li><li>Battery: ${escapeHtml(q.warranty?.battery || 'As per manufacturer')}</li><li>Workmanship: ${escapeHtml(q.warranty?.workmanship || 'As stated')}</li></ul></div>
+        </div>
+        <div style="background:#fff7ed; border:1px solid #fed7aa; padding:10px 12px; margin-bottom:1.25rem; font-size:.78rem;"><strong>Regulatory note:</strong> Prosumer connection is subject to applicable NEPRA regulations and DISCO feasibility, sanctioned load, transformer capacity, inspection and fees.</div>
+
         <h3 style="color: #073d72; margin-bottom: 0.75rem;">Terms & Conditions:</h3>
         <ol style="padding-left: 1.25rem; color: #555; font-size: 0.85rem; line-height: 1.8;">
-          ${terms.map(t => `<li>${t}</li>`).join('')}
+          ${terms.map(t => `<li>${escapeHtml(t)}</li>`).join('')}
         </ol>
 
         <div style="margin-top: 3rem; display: flex; justify-content: space-between;">
           <div>
             <div style="margin-bottom: 0.5rem;"><strong>Thanks & Regards,</strong></div>
             <div style="margin-top: 2rem; border-top: 1px solid #999; padding-top: 0.5rem; width: 200px;">
-              Sales Team<br><strong>Skyland Energy</strong>
+              Sales Team<br><strong>${escapeHtml(company.name)}</strong><br>
+              <span style="font-size: 0.72rem; color: #666;">${escapeHtml(company.website.replace(/^https?:\/\//, ''))}</span>
             </div>
           </div>
           <div style="text-align: right;">
@@ -370,8 +403,24 @@ async function showQuotationDetail(id) {
 
   container.querySelector('#back-btn')?.addEventListener('click', () => navigate('/quotations'));
   container.querySelector('#edit-btn')?.addEventListener('click', () => navigate('/quotation-builder/' + id));
-  container.querySelector('#pdf-btn')?.addEventListener('click', () => {
+  container.querySelector('#pdf-btn')?.addEventListener('click', async () => {
+    const { generateQuotationPDF } = await import('../utils/pdf-generator.js');
     generateQuotationPDF(document.getElementById('quotation-preview'), q.quotationNumber);
+  });
+  container.querySelector('#email-btn')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    const previousHtml = button.innerHTML;
+    button.textContent = 'Sending...';
+    try {
+      await sendQuotationEmail(id);
+      toast.success(`Quotation emailed to ${customer.email}`);
+      await showQuotationDetail(id);
+    } catch (error) {
+      button.disabled = false;
+      button.innerHTML = previousHtml;
+      toast.error(error.message || 'Could not email quotation');
+    }
   });
   container.querySelector('#wa-btn')?.addEventListener('click', () => {
     if (customer) sendQuotationWhatsApp(customer, q);

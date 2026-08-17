@@ -1,57 +1,59 @@
 import express from 'express';
-import * as brevo from '@getbrevo/brevo';
+import { rateLimit } from 'express-rate-limit';
+import { sendEmail } from '../services/email.js';
+import { Quotation } from '../models/Quotation.js';
+import { Customer } from '../models/Customer.js';
 
 const router = express.Router();
+const emailLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: 'draft-7', legacyHeaders: false });
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char]));
 
-// Initialize Brevo TransactionalEmailsApi
-function getBrevoClient() {
-  const apiKey = process.env.BREVO_API_KEY;
-  if (!apiKey) {
-    throw new Error('BREVO_API_KEY is missing from environment variables');
-  }
-
-  const apiInstance = new brevo.TransactionalEmailsApi();
-  apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, apiKey);
-  return apiInstance;
-}
-
-// POST send quotation email via Brevo
-router.post('/send-quotation', async (req, res) => {
+router.post('/send-quotation', emailLimiter, async (req, res) => {
   try {
-    const { toEmail, toName, quotationNumber, systemSize, systemType, grandTotal, htmlContent } = req.body;
-
-    if (!toEmail) {
-      return res.status(400).json({ error: 'Recipient email (toEmail) is required' });
+    const quotation = await Quotation.findById(req.body.quotationId);
+    if (!quotation) return res.status(404).json({ error: 'Quotation not found' });
+    if (req.user.role === 'employee' && quotation.createdBy && quotation.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Employees can email quotations they created only' });
+    }
+    const customer = await Customer.findById(quotation.customerId);
+    if (!customer?.email || !/^\S+@\S+\.\S+$/.test(customer.email)) {
+      return res.status(400).json({ error: 'Add a valid email address to this customer before sending' });
     }
 
-    const apiInstance = getBrevoClient();
-    const sendSmtpEmail = new brevo.SendSmtpEmail();
-
-    sendSmtpEmail.subject = `Solar Quotation #${quotationNumber} — Skyland Energy`;
-    sendSmtpEmail.sender = { name: 'Skyland Energy', email: 'sales@skylandenergy.pk' };
-    sendSmtpEmail.to = [{ email: toEmail, name: toName || 'Valued Customer' }];
-
-    sendSmtpEmail.htmlContent = htmlContent || `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
-        <h2 style="color: #073d72;">Skyland Energy — Solar Proposal</h2>
-        <p>Dear ${toName || 'Valued Customer'},</p>
-        <p>Thank you for choosing Skyland Energy. Please find your solar quotation summary below:</p>
-        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-          <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Quotation Ref:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${quotationNumber}</td></tr>
-          <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>System Size:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${systemSize} KW (${systemType || 'On-Grid'})</td></tr>
-          <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Grand Total:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee; color: #fa4c0a; font-weight: bold;">PKR ${Number(grandTotal).toLocaleString()}</td></tr>
+    const data = await sendEmail({
+      subject: `Solar Quotation #${quotation.quotationNumber} — Skyland Energy`,
+      to: customer.email,
+      name: customer.name || 'Valued Customer',
+      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e5e7eb;border-radius:8px">
+        <h2 style="color:#073d72">Skyland Energy — Solar Proposal</h2>
+        <p>Dear ${escapeHtml(customer.name || 'Valued Customer')},</p>
+        <p>Thank you for choosing Skyland Energy. Your quotation summary is below.</p>
+        <table style="width:100%;border-collapse:collapse;margin:20px 0">
+          <tr><td style="padding:8px;border-bottom:1px solid #eee"><strong>Quotation Ref:</strong></td><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(quotation.quotationNumber)}</td></tr>
+          <tr><td style="padding:8px;border-bottom:1px solid #eee"><strong>System Size:</strong></td><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(quotation.systemSize)} KW (${escapeHtml(quotation.systemType)})</td></tr>
+          <tr><td style="padding:8px;border-bottom:1px solid #eee"><strong>Grand Total:</strong></td><td style="padding:8px;border-bottom:1px solid #eee;color:#fa4c0a;font-weight:bold">PKR ${Number(quotation.grandTotal).toLocaleString('en-PK')}</td></tr>
         </table>
-        <p>If you have any questions, feel free to contact our sales team.</p>
-        <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
-        <p style="font-size: 12px; color: #888;">Skyland Energy • Lahore, Pakistan</p>
-      </div>
-    `;
+        <p>Please contact our sales team for the full proposal or any requested adjustments.</p>
+        <hr style="border:0;border-top:1px solid #eee;margin:20px 0" />
+        <p style="font-size:12px;color:#666">Skyland Energy (Pvt.) Ltd · 286 H-1, Johar Town, Lahore · +92 42 32353019 · theskylandenergy.com</p>
+      </div>`,
+    });
 
-    const data = await apiInstance.sendTransacEmail(sendSmtpEmail);
-    res.json({ message: 'Email sent successfully via Brevo', messageId: data.body ? data.body.messageId : data.messageId });
+    if (quotation.status === 'draft') {
+      quotation.status = 'sent';
+      quotation.updatedBy = req.user.id;
+      quotation.statusHistory.push({ status: 'sent', changedBy: req.user.id });
+      await quotation.save();
+    }
+
+    res.json({
+      message: 'Quotation email sent successfully',
+      messageId: data.body?.messageId || data.messageId,
+      status: quotation.status,
+    });
   } catch (error) {
-    console.error('Brevo Email Send Error:', error);
-    res.status(500).json({ error: error.message || 'Failed to send email' });
+    console.error('Quotation email send error:', error.message);
+    res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Failed to send quotation email' : error.message });
   }
 });
 

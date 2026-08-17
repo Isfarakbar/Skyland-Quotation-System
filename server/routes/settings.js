@@ -1,5 +1,6 @@
 import express from 'express';
 import { Setting } from '../models/Setting.js';
+import { allowRoles } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -25,13 +26,15 @@ router.get('/:key', async (req, res) => {
 });
 
 // POST set key-value setting
-router.post('/', async (req, res) => {
+router.post('/', allowRoles('super_admin', 'admin', 'manager'), async (req, res) => {
   try {
     const { key, value } = req.body;
+    const managerKeys = ['validityDays', 'advancePercent', 'exchangeRate', 'defaultTerms'];
+    if (req.user.role === 'manager' && !managerKeys.includes(key)) return res.status(403).json({ error: 'Managers can update quotation defaults only' });
     const setting = await Setting.findOneAndUpdate(
       { key },
-      { key, value },
-      { upsert: true, new: true, runValidators: true }
+      { key, value, updatedBy: req.user.id },
+      { upsert: true, returnDocument: 'after', runValidators: true }
     );
     res.json(setting);
   } catch (error) {

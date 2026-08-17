@@ -10,24 +10,50 @@ import './styles/layout.css';
 
 // Core
 import { getDB } from './db/database.js';
-import { seedDatabase } from './db/seed-data.js';
-import { registerRoute, initRouter } from './router.js';
+import { registerRoute, initRouter, onBeforeNavigate, navigate } from './router.js';
 import { renderSidebar, renderSidebarOverlay } from './components/sidebar.js';
+import { getCurrentUser, restoreSession } from './auth.js';
 
-// Pages
-import { renderDashboard } from './pages/dashboard.js';
-import { renderProducts } from './pages/products.js';
-import { renderCustomers } from './pages/customers.js';
-import { renderQuotationBuilder } from './pages/quotation-builder.js';
-import { renderQuotations } from './pages/quotations.js';
-import { renderRates } from './pages/rates.js';
-import { renderSettings } from './pages/settings.js';
+const lazyPage = (loader, exportName) => async params => {
+  const page = await loader();
+  return page[exportName](params);
+};
+
+const renderDashboard = lazyPage(() => import('./pages/dashboard.js'), 'renderDashboard');
+const renderProducts = lazyPage(() => import('./pages/products.js'), 'renderProducts');
+const renderCustomers = lazyPage(() => import('./pages/customers.js'), 'renderCustomers');
+const renderQuotationBuilder = lazyPage(() => import('./pages/quotation-builder.js'), 'renderQuotationBuilder');
+const renderQuotations = lazyPage(() => import('./pages/quotations.js'), 'renderQuotations');
+const renderRates = lazyPage(() => import('./pages/rates.js'), 'renderRates');
+const renderSettings = lazyPage(() => import('./pages/settings.js'), 'renderSettings');
+const renderUsers = lazyPage(() => import('./pages/users.js'), 'renderUsers');
+const renderProfile = lazyPage(() => import('./pages/profile.js'), 'renderProfile');
+const renderLogin = lazyPage(() => import('./pages/auth.js'), 'renderLogin');
+const renderSignup = lazyPage(() => import('./pages/auth.js'), 'renderSignup');
+const renderForgotPassword = lazyPage(() => import('./pages/auth.js'), 'renderForgotPassword');
+const renderResetPassword = lazyPage(() => import('./pages/auth.js'), 'renderResetPassword');
 
 async function init() {
   try {
-    // Initialize database
+    await restoreSession();
+
+    registerRoute('/login', renderLogin);
+    registerRoute('/signup', renderSignup);
+    registerRoute('/forgot-password', renderForgotPassword);
+    registerRoute('/reset-password', renderResetPassword);
+
+    const user = getCurrentUser();
+    if (!user) {
+      onBeforeNavigate(path => {
+        const publicRoutes = ['/login', '/signup', '/forgot-password', '/reset-password'];
+        if (!publicRoutes.includes(path)) { navigate('/login'); return false; }
+        return true;
+      });
+      initRouter('/login');
+      return;
+    }
+
     await getDB();
-    await seedDatabase();
 
     // Build app shell
     const app = document.getElementById('app');
@@ -54,6 +80,15 @@ async function init() {
     registerRoute('/quotations', renderQuotations);
     registerRoute('/rates', renderRates);
     registerRoute('/settings', renderSettings);
+    registerRoute('/users', renderUsers);
+    registerRoute('/profile', renderProfile);
+
+    onBeforeNavigate(path => {
+      if (['/login', '/signup', '/forgot-password'].includes(path)) { navigate('/dashboard'); return false; }
+      if (path === '/users' && !['super_admin', 'admin'].includes(user.role)) { navigate('/dashboard'); return false; }
+      if (['/rates', '/settings'].includes(path) && !['super_admin', 'admin', 'manager'].includes(user.role)) { navigate('/dashboard'); return false; }
+      return true;
+    });
 
     // Start router
     initRouter('/dashboard');
@@ -65,9 +100,10 @@ async function init() {
       <div class="app-loading">
         <p style="color: var(--color-danger);">Failed to load application</p>
         <p class="text-sm text-secondary">${error.message}</p>
-        <button class="btn btn-primary" onclick="location.reload()">Retry</button>
+        <button class="btn btn-primary" id="app-retry-btn">Retry</button>
       </div>
     `;
+    document.getElementById('app-retry-btn')?.addEventListener('click', () => location.reload());
   }
 }
 

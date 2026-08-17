@@ -2,15 +2,27 @@
 // SKYLAND ENERGY — Quotation Builder (Wizard)
 // ============================================
 import { getAllCustomers, addCustomer, getAllProducts, addQuotation, updateQuotation, getQuotation, getCustomer, getSetting } from '../db/database.js';
-import { BOQ_TEMPLATE, DEFAULT_TERMS } from '../db/seed-data.js';
-import { formatCurrency, generateQuotationNumber, SYSTEM_TYPES, uid, getInitials, escapeHtml } from '../utils/helpers.js';
+import { DEFAULT_TERMS } from '../db/seed-data.js';
+import { formatCurrency, generateQuotationNumber, SYSTEM_TYPES, CATEGORY_LABELS, uid, getInitials, escapeHtml } from '../utils/helpers.js';
 
 import { createIcon } from '../components/icons.js';
 import { toast } from '../components/toast.js';
 import { navigate } from '../router.js';
 import { toggleMobileSidebar } from '../components/sidebar.js';
 import { sendQuotationWhatsApp } from '../utils/whatsapp.js';
-import { generateQuotationPDF } from '../utils/pdf-generator.js';
+
+const DISCOS = ['LESCO', 'IESCO', 'FESCO', 'GEPCO', 'MEPCO', 'PESCO', 'HESCO', 'SEPCO', 'QESCO', 'TESCO', 'K-Electric', 'Other'];
+const DEFAULT_PAYMENT_SCHEDULE = [
+  { label: 'Advance with order', percent: 20 },
+  { label: 'Equipment delivery / installation', percent: 70 },
+  { label: 'Testing and commissioning', percent: 10 },
+];
+const DEFAULT_WARRANTY = {
+  panels: 'As per manufacturer warranty',
+  inverter: 'As per manufacturer warranty',
+  battery: 'As per manufacturer warranty',
+  workmanship: '1 year workmanship warranty',
+};
 
 let state = {
   step: 1,
@@ -18,12 +30,18 @@ let state = {
   customerName: '',
   systemSize: '',
   systemType: 'ongrid',
+  disco: '', sanctionedLoad: 0, meterPhase: 'unknown', roofType: 'rcc', monthlyUnits: 0, monthlyBill: 0,
+  prosumerIncluded: false, siteSurveyStatus: 'required',
   quotationNumber: '',
   validityDays: 5,
   items: [],
   discount: 0,
   discountType: 'percent',
+  taxLabel: 'Applicable taxes', taxRate: 0,
   exchangeRate: 285,
+  installationDays: 7,
+  paymentSchedule: DEFAULT_PAYMENT_SCHEDULE.map(item => ({ ...item })),
+  warranty: { ...DEFAULT_WARRANTY },
   terms: [],
   notes: '',
   editingId: null,
@@ -31,8 +49,8 @@ let state = {
 
 export async function renderQuotationBuilder(params) {
   // Check if editing an existing quotation
-  if (params && !isNaN(params)) {
-    const q = await getQuotation(parseInt(params));
+  if (params && !params.startsWith('customer-')) {
+    const q = await getQuotation(params);
     if (q) {
       const customer = await getCustomer(q.customerId);
       state = {
@@ -41,12 +59,19 @@ export async function renderQuotationBuilder(params) {
         customerName: customer?.name || '',
         systemSize: q.systemSize || '',
         systemType: q.systemType || 'ongrid',
+        disco: q.disco || '', sanctionedLoad: q.sanctionedLoad || 0, meterPhase: q.meterPhase || 'unknown',
+        roofType: q.roofType || 'rcc', monthlyUnits: q.monthlyUnits || 0, monthlyBill: q.monthlyBill || 0,
+        prosumerIncluded: Boolean(q.prosumerIncluded), siteSurveyStatus: q.siteSurveyStatus || 'required',
         quotationNumber: q.quotationNumber || '',
         validityDays: q.validityDays || 5,
         items: q.items || [],
         discount: q.discount || 0,
-        discountType: q.discountType || 'percent',
+        discountType: q.discountType === 'flat' ? 'fixed' : (q.discountType || 'percent'),
+        taxLabel: q.taxLabel || 'Applicable taxes', taxRate: q.taxRate || 0,
         exchangeRate: q.exchangeRate || 285,
+        installationDays: q.installationDays || 7,
+        paymentSchedule: q.paymentSchedule?.length ? q.paymentSchedule.map(item => ({ label: item.label, percent: item.percent })) : DEFAULT_PAYMENT_SCHEDULE.map(item => ({ ...item })),
+        warranty: { ...DEFAULT_WARRANTY, ...(q.warranty || {}) },
         terms: q.termsAndConditions || DEFAULT_TERMS,
         notes: q.notes || '',
         editingId: q.id,
@@ -54,7 +79,7 @@ export async function renderQuotationBuilder(params) {
     }
   } else if (params && params.startsWith('customer-')) {
     // Pre-select customer
-    const custId = parseInt(params.replace('customer-', ''));
+    const custId = params.replace('customer-', '');
     const customer = await getCustomer(custId);
     if (customer) {
       resetState();
@@ -62,7 +87,7 @@ export async function renderQuotationBuilder(params) {
       state.customerName = customer.name;
       state.step = 2;
     }
-  } else if (!state.editingId) {
+  } else if (!params || !state.editingId) {
     // Fresh quotation — check if there's a customer id passed
     if (params && !isNaN(parseInt(params))) {
       // Could be a customer pre-select from customer page
@@ -89,12 +114,18 @@ function resetState() {
     customerName: '',
     systemSize: '',
     systemType: 'ongrid',
+    disco: '', sanctionedLoad: 0, meterPhase: 'unknown', roofType: 'rcc', monthlyUnits: 0, monthlyBill: 0,
+    prosumerIncluded: false, siteSurveyStatus: 'required',
     quotationNumber: '',
     validityDays: 5,
     items: [],
     discount: 0,
     discountType: 'percent',
+    taxLabel: 'Applicable taxes', taxRate: 0,
     exchangeRate: 285,
+    installationDays: 7,
+    paymentSchedule: DEFAULT_PAYMENT_SCHEDULE.map(item => ({ ...item })),
+    warranty: { ...DEFAULT_WARRANTY },
     terms: [...DEFAULT_TERMS],
     notes: '',
     editingId: null,
@@ -110,7 +141,7 @@ function renderStep() {
         <button class="mobile-menu-toggle" id="mobile-menu-btn">${createIcon('menu')}</button>
         <div>
           <h1 class="page-title">${state.editingId ? 'Edit Quotation' : 'New Quotation'}</h1>
-          <p class="page-subtitle">${state.quotationNumber || 'Build a quotation step by step'}</p>
+          <p class="page-subtitle">${escapeHtml(state.quotationNumber || 'Build a quotation step by step')}</p>
         </div>
       </div>
     </div>
@@ -119,10 +150,10 @@ function renderStep() {
     <div class="wizard-steps">
       ${[
         { n: 1, label: 'Customer' },
-        { n: 2, label: 'System' },
-        { n: 3, label: 'Line Items' },
-        { n: 4, label: 'Pricing' },
-        { n: 5, label: 'Preview' },
+        { n: 2, label: 'Project' },
+        { n: 3, label: 'Scope' },
+        { n: 4, label: 'Commercials' },
+        { n: 5, label: 'Proposal' },
       ].map((s, i, arr) => `
         <div class="wizard-step ${state.step === s.n ? 'active' : ''} ${state.step > s.n ? 'completed' : ''}" data-step="${s.n}">
           <span class="wizard-step-number">${state.step > s.n ? createIcon('check') : s.n}</span>
@@ -173,12 +204,12 @@ async function renderStep1(body) {
 
       <div id="customer-list" style="display: flex; flex-direction: column; gap: 0.75rem; max-height: 400px; overflow-y: auto;">
         ${customers.map(c => `
-          <div class="card ${state.customerId === c.id ? 'selected-customer' : ''}" style="cursor: pointer; padding: 1rem; ${state.customerId === c.id ? 'border-color: var(--color-accent); background: rgba(250,76,10,0.06);' : ''}" data-cust-id="${c.id}">
+          <div class="card ${state.customerId === c.id ? 'selected-customer' : ''}" style="cursor: pointer; padding: 1rem; ${state.customerId === c.id ? 'border-color: var(--color-accent); background: rgba(250,76,10,0.06);' : ''}" data-cust-id="${escapeHtml(c.id)}">
             <div class="customer-name-cell">
-              <div class="customer-avatar">${getInitials(c.name)}</div>
+              <div class="customer-avatar">${escapeHtml(getInitials(c.name))}</div>
               <div>
-                <strong>${c.name}</strong>
-                <div class="text-sm text-secondary">${c.phone} • ${c.city}</div>
+                <strong>${escapeHtml(c.name)}</strong>
+                <div class="text-sm text-secondary">${escapeHtml(c.phone)} • ${escapeHtml(c.city)}</div>
               </div>
             </div>
           </div>
@@ -209,8 +240,8 @@ async function renderStep1(body) {
   // Customer selection
   body.querySelectorAll('[data-cust-id]').forEach(card => {
     card.addEventListener('click', () => {
-      const id = parseInt(card.dataset.custId);
-      const cust = customers.find(c => c.id === id);
+      const id = card.dataset.custId;
+      const cust = customers.find(c => String(c.id) === id);
       state.customerId = id;
       state.customerName = cust.name;
       state.quotationNumber = generateQuotationNumber(cust.name);
@@ -251,8 +282,9 @@ async function renderStep1(body) {
 // ---- Step 2: System Configuration ----
 async function renderStep2(body) {
   body.innerHTML = `
-    <div style="max-width: 600px; margin: 0 auto;">
-      <h2 style="margin-bottom: 1.5rem;">System Configuration</h2>
+    <div style="max-width: 820px; margin: 0 auto;">
+      <h2 style="margin-bottom: 0.35rem;">Project Profile</h2>
+      <p class="text-sm text-secondary" style="margin-bottom: 1.5rem;">Capture the site and connection details required for an accurate Pakistan solar proposal.</p>
 
       <div style="display: flex; flex-direction: column; gap: 1.25rem;">
         <div class="form-group">
@@ -276,19 +308,45 @@ async function renderStep2(body) {
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">Quotation Reference</label>
-            <input type="text" class="form-input" id="quote-ref" value="${state.quotationNumber}" placeholder="Auto-generated" />
+            <input type="text" class="form-input" id="quote-ref" value="${escapeHtml(state.quotationNumber)}" placeholder="Auto-generated" pattern="[A-Za-z0-9][A-Za-z0-9-]{2,79}" maxlength="80" />
           </div>
           <div class="form-group">
             <label class="form-label">Validity (Days)</label>
             <input type="number" class="form-input" id="validity-days" value="${state.validityDays}" min="1" max="90" />
           </div>
         </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Distribution Company (DISCO)</label>
+            <select class="form-select" id="disco"><option value="">Select DISCO</option>${DISCOS.map(name => `<option value="${name}" ${state.disco === name ? 'selected' : ''}>${name}</option>`).join('')}</select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Sanctioned Load (kW)</label>
+            <input type="number" class="form-input" id="sanctioned-load" value="${state.sanctionedLoad || ''}" min="0" step="0.1" placeholder="From electricity bill" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Meter Phase</label><select class="form-select" id="meter-phase"><option value="unknown" ${state.meterPhase === 'unknown' ? 'selected' : ''}>Not confirmed</option><option value="single-phase" ${state.meterPhase === 'single-phase' ? 'selected' : ''}>Single phase</option><option value="three-phase" ${state.meterPhase === 'three-phase' ? 'selected' : ''}>Three phase</option></select></div>
+          <div class="form-group"><label class="form-label">Installation Surface</label><select class="form-select" id="roof-type"><option value="rcc" ${state.roofType === 'rcc' ? 'selected' : ''}>RCC rooftop</option><option value="metal-shed" ${state.roofType === 'metal-shed' ? 'selected' : ''}>Metal shed</option><option value="ground-mount" ${state.roofType === 'ground-mount' ? 'selected' : ''}>Ground mount</option><option value="other" ${state.roofType === 'other' ? 'selected' : ''}>Other</option></select></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Average Monthly Units (kWh)</label><input type="number" class="form-input" id="monthly-units" value="${state.monthlyUnits || ''}" min="0" placeholder="Optional" /></div>
+          <div class="form-group"><label class="form-label">Average Monthly Bill (PKR)</label><input type="number" class="form-input" id="monthly-bill" value="${state.monthlyBill || ''}" min="0" placeholder="Optional" /></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Site Survey</label><select class="form-select" id="site-survey"><option value="required" ${state.siteSurveyStatus === 'required' ? 'selected' : ''}>Required before finalization</option><option value="completed" ${state.siteSurveyStatus === 'completed' ? 'selected' : ''}>Completed</option><option value="not-required" ${state.siteSurveyStatus === 'not-required' ? 'selected' : ''}>Not required</option></select></div>
+          <label class="card" style="display:flex; align-items:center; gap:0.75rem; padding:1rem; cursor:pointer;"><input type="checkbox" id="prosumer-included" ${state.prosumerIncluded ? 'checked' : ''} /><span><strong>Include prosumer / DISCO coordination</strong><br><span class="text-xs text-secondary">Documentation and application coordination; approval remains subject to DISCO/NEPRA requirements.</span></span></label>
+        </div>
       </div>
     </div>
 
     <div class="wizard-footer" style="margin-top: 2rem;">
       <button class="btn btn-secondary" id="prev-btn">${createIcon('arrow-left')} Back</button>
-      <button class="btn btn-primary" id="next-btn">Next: Line Items ${createIcon('arrow-right')}</button>
+      <button class="btn btn-primary" id="next-btn">Next: Equipment & Scope ${createIcon('arrow-right')}</button>
     </div>
   `;
 
@@ -308,19 +366,25 @@ async function renderStep2(body) {
     state.systemSize = document.getElementById('system-size').value;
     state.quotationNumber = document.getElementById('quote-ref').value || generateQuotationNumber(state.customerName);
     state.validityDays = parseInt(document.getElementById('validity-days').value) || 5;
+    state.disco = document.getElementById('disco').value;
+    state.sanctionedLoad = Number(document.getElementById('sanctioned-load').value) || 0;
+    state.meterPhase = document.getElementById('meter-phase').value;
+    state.roofType = document.getElementById('roof-type').value;
+    state.monthlyUnits = Number(document.getElementById('monthly-units').value) || 0;
+    state.monthlyBill = Number(document.getElementById('monthly-bill').value) || 0;
+    state.siteSurveyStatus = document.getElementById('site-survey').value;
+    state.prosumerIncluded = document.getElementById('prosumer-included').checked;
 
     if (!state.systemSize) {
       toast.warning('Please enter system size');
       return;
     }
-
-    // Auto-populate items from BOQ template if empty
-    if (state.items.length === 0) {
-      state.items = BOQ_TEMPLATE.map(item => ({
-        ...item,
-        id: uid(),
-        total: item.quantity * item.unitPrice,
-      }));
+    if (state.prosumerIncluded && state.sanctionedLoad > 0 && Number(state.systemSize) > state.sanctionedLoad) {
+      toast.warning('Prosumer generation capacity cannot exceed the sanctioned load. Adjust the size or scope.');
+      return;
+    }
+    if (state.prosumerIncluded && Number(state.systemSize) >= 250) {
+      toast.info('A load-flow study may be required for a 250 kW or larger prosumer project.');
     }
 
     state.step = 3;
@@ -328,7 +392,7 @@ async function renderStep2(body) {
   });
 }
 
-// ---- Step 3: Line Items ----
+// ---- Step 3: Product selection ----
 async function renderStep3(body) {
   const products = await getAllProducts();
 
@@ -336,12 +400,36 @@ async function renderStep3(body) {
     return state.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
   }
 
+  function getProductDisplayName(product) {
+    const baseName = String(product.name || '').trim();
+    const existingText = baseName.toLowerCase();
+    const details = [product.brand, product.model]
+      .filter(value => value && !existingText.includes(String(value).toLowerCase()));
+    const capacity = product.capacity ? `${product.capacity}${product.capacityUnit || ''}` : '';
+    if (capacity && !existingText.includes(capacity.toLowerCase())) details.push(capacity);
+    return [baseName, ...details].filter(Boolean).join(' · ');
+  }
+
   function renderItems() {
     body.innerHTML = `
-      <div style="max-width: 900px; margin: 0 auto;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-          <h2>Bill of Quantities (BOQ)</h2>
-          <button class="btn btn-outline btn-sm" id="add-item-btn">${createIcon('plus')} Add Item</button>
+      <div class="quotation-products-step">
+        <div class="quotation-products-heading">
+          <div>
+            <h2>Select Products & Services</h2>
+            <p class="text-sm text-secondary">Add any combination of panels, inverters, batteries, accessories, or services. This is a price catalog—not stock tracking.</p>
+          </div>
+        </div>
+
+        <div class="quotation-product-actions" aria-label="Add quotation item">
+          <button class="btn btn-primary btn-sm" id="add-installation-scope">${createIcon('check')} Add Standard Installation Scope</button>
+          <button class="btn btn-outline btn-sm" data-add-category="solar-panel">${createIcon('solar-panel')} Add Panel</button>
+          <button class="btn btn-outline btn-sm" data-add-category="inverter">${createIcon('zap')} Add Inverter</button>
+          <button class="btn btn-outline btn-sm" data-add-category="battery">${createIcon('battery')} Add Battery</button>
+          <button class="btn btn-outline btn-sm" data-add-category="structure">${createIcon('package')} Add Structure</button>
+          <button class="btn btn-outline btn-sm" data-add-category="cable">${createIcon('package')} Add Cable</button>
+          <button class="btn btn-outline btn-sm" data-add-category="accessory">${createIcon('package')} Add Accessory</button>
+          <button class="btn btn-outline btn-sm" data-add-category="service">${createIcon('plus')} Add Service</button>
+          <button class="btn btn-outline btn-sm" data-add-category="other">${createIcon('plus')} Custom Item</button>
         </div>
 
         <div class="table-container" style="margin-bottom: 1rem;">
@@ -349,8 +437,8 @@ async function renderStep3(body) {
             <thead>
               <tr>
                 <th style="width:30px;">#</th>
-                <th>Item Details</th>
-                <th style="width: 180px;">Product</th>
+                <th>Quoted Item</th>
+                <th style="width: 260px;">Catalog Product</th>
                 <th style="width:80px;">Qty</th>
                 <th style="width:130px;">Unit Price</th>
                 <th style="width:130px;">Total</th>
@@ -358,18 +446,21 @@ async function renderStep3(body) {
               </tr>
             </thead>
             <tbody>
-              ${state.items.map((item, i) => `
+              ${state.items.length === 0 ? `
+                <tr><td colspan="7"><div class="quotation-products-empty">Choose a product type above to begin the quotation.</div></td></tr>
+              ` : state.items.map((item, i) => `
                 <tr data-idx="${i}">
                   <td class="text-secondary">${i + 1}</td>
-                  <td>
+                  <td class="quotation-item-name-cell">
                     <input type="text" class="form-input" value="${escapeHtml(item.name)}" data-field="name" style="font-size: 0.8rem; min-height: 34px;" />
+                    <span class="badge badge-category">${escapeHtml(CATEGORY_LABELS[item.category] || item.category || 'Custom')}</span>
                   </td>
                   <td>
                     <select class="form-select" data-field="productSelect" style="font-size: 0.8rem; min-height: 34px;">
-                      <option value="">— Pick —</option>
+                      <option value="">${['service', 'other'].includes(item.category) ? 'Custom item (or select from catalog)' : '— Select exact product —'}</option>
                       ${products
-                        .filter(p => !item.category || p.category === item.category || item.category === 'service')
-                        .map(p => `<option value="${p.id}" ${item.productId === p.id ? 'selected' : ''}>${p.brand} ${p.model || ''} — ${formatCurrency(p.unitPrice)}</option>`)
+                        .filter(p => !item.category || p.category === item.category)
+                        .map(p => `<option value="${escapeHtml(p.id)}" ${String(item.productId) === String(p.id) ? 'selected' : ''}>${escapeHtml(getProductDisplayName(p))} — ${formatCurrency(p.unitPrice)}</option>`)
                         .join('')}
                     </select>
                   </td>
@@ -379,7 +470,7 @@ async function renderStep3(body) {
                   <td>
                     <input type="number" class="form-input" value="${item.unitPrice}" data-field="unitPrice" min="0" style="text-align:right; min-height: 34px;" />
                   </td>
-                  <td style="text-align: right; font-weight: 600;">
+                  <td class="quotation-line-total" style="text-align: right; font-weight: 600;">
                     ${formatCurrency(item.quantity * item.unitPrice)}
                   </td>
                   <td>
@@ -393,7 +484,7 @@ async function renderStep3(body) {
             <tfoot>
               <tr style="background: var(--bg-table-header);">
                 <td colspan="5" style="text-align: right; font-weight: 700; font-size: 1rem;">Subtotal</td>
-                <td style="text-align: right; font-weight: 700; font-size: 1rem; color: var(--color-accent);">${formatCurrency(calcSubtotal())}</td>
+                <td id="quotation-items-subtotal" style="text-align: right; font-weight: 700; font-size: 1rem; color: var(--color-accent);">${formatCurrency(calcSubtotal())}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -403,42 +494,43 @@ async function renderStep3(body) {
 
       <div class="wizard-footer" style="margin-top: 2rem;">
         <button class="btn btn-secondary" id="prev-btn">${createIcon('arrow-left')} Back</button>
-        <button class="btn btn-primary" id="next-btn">Next: Pricing ${createIcon('arrow-right')}</button>
+        <button class="btn btn-primary" id="next-btn">Next: Discount & Terms ${createIcon('arrow-right')}</button>
       </div>
     `;
 
-    // Field change handlers
-    body.querySelectorAll('input[data-field], select[data-field]').forEach(input => {
-      input.addEventListener('change', (e) => {
+    body.querySelectorAll('select[data-field="productSelect"]').forEach(input => {
+      input.addEventListener('change', () => {
+        const row = input.closest('tr');
+        const idx = parseInt(row.dataset.idx);
+        const product = products.find(p => String(p.id) === input.value);
+        if (product) {
+          state.items[idx] = {
+            ...state.items[idx],
+            productId: product.id,
+            name: getProductDisplayName(product),
+            category: product.category,
+            unit: product.unit || 'piece',
+            unitPrice: Number(product.unitPrice) || 0,
+          };
+
+          if (product.category === 'solar-panel' && state.systemSize) {
+            const capacity = Number.parseFloat(product.capacity) || 0;
+            const wattage = product.capacityUnit === 'kW' ? capacity * 1000 : capacity;
+            if (wattage > 0) state.items[idx].quantity = Math.ceil((Number(state.systemSize) * 1000) / wattage);
+          }
+          renderItems();
+        }
+      });
+    });
+
+    body.querySelectorAll('input[data-field]').forEach(input => {
+      input.addEventListener('input', () => {
         const row = input.closest('tr');
         const idx = parseInt(row.dataset.idx);
         const field = input.dataset.field;
-
-        if (field === 'productSelect') {
-          const prodId = parseInt(input.value);
-          const product = products.find(p => p.id === prodId);
-          if (product) {
-            state.items[idx].productId = product.id;
-            state.items[idx].unitPrice = product.unitPrice;
-            state.items[idx].name = product.name;
-
-            // Auto-calc panel quantity based on system size
-            if (product.category === 'solar-panel' && state.systemSize) {
-              const wattage = parseInt(product.capacity) || 585;
-              const sizeW = parseFloat(state.systemSize) * 1000;
-              state.items[idx].quantity = Math.ceil(sizeW / wattage);
-            }
-            renderItems();
-          }
-        } else if (field === 'quantity') {
-          state.items[idx].quantity = parseFloat(input.value) || 0;
-          renderItems();
-        } else if (field === 'unitPrice') {
-          state.items[idx].unitPrice = parseFloat(input.value) || 0;
-          renderItems();
-        } else if (field === 'name') {
-          state.items[idx].name = input.value;
-        }
+        state.items[idx][field] = field === 'name' ? input.value : (Number(input.value) || 0);
+        row.querySelector('.quotation-line-total').textContent = formatCurrency(Number(state.items[idx].quantity) * Number(state.items[idx].unitPrice));
+        body.querySelector('#quotation-items-subtotal').textContent = formatCurrency(calcSubtotal());
       });
     });
 
@@ -450,22 +542,51 @@ async function renderStep3(body) {
       });
     });
 
-    // Add item
-    body.querySelector('#add-item-btn')?.addEventListener('click', () => {
+    body.querySelectorAll('[data-add-category]').forEach(button => button.addEventListener('click', () => {
+      const category = button.dataset.addCategory;
       state.items.push({
         id: uid(),
-        name: '',
+        productId: '',
+        name: ['service', 'other'].includes(category) ? (category === 'service' ? 'Custom service' : 'Custom item') : '',
         description: '',
-        category: '',
-        unit: 'job',
+        category,
+        unit: category === 'service' ? 'job' : 'piece',
         quantity: 1,
         unitPrice: 0,
       });
       renderItems();
+    }));
+
+    body.querySelector('#add-installation-scope')?.addEventListener('click', () => {
+      const standardScope = [
+        ['structure', 'Solar mounting structure, foundations and fasteners', 'job'],
+        ['accessory', 'DC/AC protection, distribution boxes, breakers and isolators', 'job'],
+        ['cable', 'PV DC cable, AC cable, conduits and cable accessories', 'job'],
+        ['accessory', 'Earthing system and lightning protection', 'job'],
+        ['service', 'Installation labour and electrical works', 'job'],
+        ['service', 'Engineering, system design, testing and commissioning', 'job'],
+        ['service', 'Transportation and site mobilization', 'job'],
+        ...(state.prosumerIncluded ? [['service', 'Prosumer/DISCO documentation and application coordination', 'job']] : []),
+      ];
+      const existing = new Set(state.items.map(item => String(item.name || '').toLowerCase()));
+      standardScope.forEach(([category, name, unit]) => {
+        if (!existing.has(name.toLowerCase())) state.items.push({ id: uid(), productId: '', name, description: '', category, unit, quantity: 1, unitPrice: 0 });
+      });
+      toast.success('Standard installation scope added. Enter rates or leave included items at zero.');
+      renderItems();
     });
 
     body.querySelector('#prev-btn')?.addEventListener('click', () => { state.step = 2; renderStep(); });
-    body.querySelector('#next-btn')?.addEventListener('click', () => { state.step = 4; renderStep(); });
+    body.querySelector('#next-btn')?.addEventListener('click', () => {
+      const validItems = state.items.filter(item => String(item.name || '').trim() && Number(item.quantity) > 0);
+      if (!validItems.length || calcSubtotal() <= 0) {
+        toast.warning('Add at least one priced product or service before continuing');
+        return;
+      }
+      state.items = validItems;
+      state.step = 4;
+      renderStep();
+    });
   }
 
   renderItems();
@@ -493,7 +614,7 @@ async function renderStep4(body) {
               <input type="number" class="form-input" id="discount-value" value="${state.discount}" min="0" />
               <select class="form-select" id="discount-type" style="width: 80px;">
                 <option value="percent" ${state.discountType === 'percent' ? 'selected' : ''}>%</option>
-                <option value="flat" ${state.discountType === 'flat' ? 'selected' : ''}>PKR</option>
+                <option value="fixed" ${state.discountType === 'fixed' ? 'selected' : ''}>PKR</option>
               </select>
             </div>
           </div>
@@ -503,14 +624,41 @@ async function renderStep4(body) {
           </div>
         </div>
 
+        <div class="form-row" style="margin-bottom: 1rem;">
+          <div class="form-group">
+            <label class="form-label">Tax Label</label>
+            <input type="text" class="form-input" id="tax-label" value="${escapeHtml(state.taxLabel)}" maxlength="100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tax Rate (%)</label>
+            <input type="number" class="form-input" id="tax-rate" value="${state.taxRate}" min="0" max="100" step="0.01" />
+            <span class="text-xs text-secondary">Keep at 0 when taxes are excluded or not yet confirmed.</span>
+          </div>
+        </div>
+
         <div id="pricing-summary" style="border-top: 1px solid var(--border-color); padding-top: 1rem;">
           ${renderPricingSummary(subtotal)}
         </div>
       </div>
 
+      <div class="card" style="margin-bottom: 1.5rem; padding: 1.5rem;">
+        <h3 style="margin-bottom:1rem;">Delivery & Payment Plan</h3>
+        <div class="form-group" style="max-width:260px;"><label class="form-label">Estimated Installation (days)</label><input type="number" class="form-input" id="installation-days" value="${state.installationDays}" min="1" max="365" /></div>
+        <div class="form-row">
+          ${state.paymentSchedule.map((milestone, index) => `<div class="form-group"><label class="form-label">Milestone ${index + 1}</label><input class="form-input" data-payment-label="${index}" value="${escapeHtml(milestone.label)}" maxlength="120" /><div style="display:flex; align-items:center; gap:.5rem; margin-top:.4rem;"><input type="number" class="form-input" data-payment-percent="${index}" value="${milestone.percent}" min="0" max="100" /><span>%</span></div></div>`).join('')}
+        </div>
+        <p class="text-xs text-secondary">Payment milestone percentages must total 100%.</p>
+      </div>
+
+      <div class="card" style="margin-bottom: 1.5rem; padding: 1.5rem;">
+        <h3 style="margin-bottom:1rem;">Warranty & After-Sales</h3>
+        <div class="form-row"><div class="form-group"><label class="form-label">Solar Panels</label><input class="form-input" id="warranty-panels" value="${escapeHtml(state.warranty.panels)}" /></div><div class="form-group"><label class="form-label">Inverter</label><input class="form-input" id="warranty-inverter" value="${escapeHtml(state.warranty.inverter)}" /></div></div>
+        <div class="form-row"><div class="form-group"><label class="form-label">Battery</label><input class="form-input" id="warranty-battery" value="${escapeHtml(state.warranty.battery)}" /></div><div class="form-group"><label class="form-label">Workmanship</label><input class="form-input" id="warranty-workmanship" value="${escapeHtml(state.warranty.workmanship)}" /></div></div>
+      </div>
+
       <div class="form-group" style="margin-bottom: 1.5rem;">
         <label class="form-label">Notes</label>
-        <textarea class="form-textarea" id="quote-notes" placeholder="Any additional notes for this quotation...">${state.notes}</textarea>
+        <textarea class="form-textarea" id="quote-notes" placeholder="Any additional notes for this quotation...">${escapeHtml(state.notes)}</textarea>
       </div>
 
       <div class="form-group">
@@ -526,17 +674,33 @@ async function renderStep4(body) {
   `;
 
   // Live pricing update
-  ['discount-value', 'discount-type', 'exchange-rate'].forEach(id => {
-    body.querySelector(`#${id}`)?.addEventListener('change', () => {
+  ['discount-value', 'discount-type', 'exchange-rate', 'tax-rate', 'tax-label'].forEach(id => {
+    body.querySelector(`#${id}`)?.addEventListener('input', () => {
       state.discount = parseFloat(document.getElementById('discount-value').value) || 0;
       state.discountType = document.getElementById('discount-type').value;
       state.exchangeRate = parseFloat(document.getElementById('exchange-rate').value) || 285;
+      state.taxRate = Math.min(100, Math.max(0, parseFloat(document.getElementById('tax-rate').value) || 0));
+      state.taxLabel = document.getElementById('tax-label').value || 'Applicable taxes';
       document.getElementById('pricing-summary').innerHTML = renderPricingSummary(subtotal);
     });
   });
 
   body.querySelector('#prev-btn')?.addEventListener('click', () => { state.step = 3; renderStep(); });
   body.querySelector('#next-btn')?.addEventListener('click', () => {
+    state.installationDays = Number(document.getElementById('installation-days').value) || 7;
+    state.paymentSchedule = state.paymentSchedule.map((_, index) => ({
+      label: document.querySelector(`[data-payment-label="${index}"]`).value.trim(),
+      percent: Number(document.querySelector(`[data-payment-percent="${index}"]`).value) || 0,
+    }));
+    const paymentTotal = state.paymentSchedule.reduce((sum, milestone) => sum + milestone.percent, 0);
+    if (state.paymentSchedule.some(milestone => !milestone.label) || Math.abs(paymentTotal - 100) > 0.01) {
+      toast.warning('Payment milestone percentages must have labels and total exactly 100%');
+      return;
+    }
+    state.warranty = {
+      panels: document.getElementById('warranty-panels').value.trim(), inverter: document.getElementById('warranty-inverter').value.trim(),
+      battery: document.getElementById('warranty-battery').value.trim(), workmanship: document.getElementById('warranty-workmanship').value.trim(),
+    };
     state.notes = document.getElementById('quote-notes').value;
     const termsText = document.getElementById('quote-terms').value;
     state.terms = termsText.split('\n').map(l => l.replace(/^\d+\.\s*/, '').trim()).filter(Boolean);
@@ -553,7 +717,10 @@ function renderPricingSummary(subtotal) {
     discountAmount = state.discount;
   }
   const grandTotal = subtotal - discountAmount;
-  const perWatt = state.systemSize ? (grandTotal / (parseFloat(state.systemSize) * 1000)) : 0;
+  const taxableAmount = Math.max(0, grandTotal);
+  const taxAmount = taxableAmount * (state.taxRate / 100);
+  const totalWithTax = taxableAmount + taxAmount;
+  const perWatt = state.systemSize ? (totalWithTax / (parseFloat(state.systemSize) * 1000)) : 0;
 
   return `
     ${state.discount > 0 ? `
@@ -562,9 +729,10 @@ function renderPricingSummary(subtotal) {
         <span style="color: var(--color-success);">- ${formatCurrency(discountAmount)}</span>
       </div>
     ` : ''}
+    ${state.taxRate > 0 ? `<div style="display:flex; justify-content:space-between; margin-bottom:.5rem;"><span class="text-secondary">${escapeHtml(state.taxLabel)} (${state.taxRate}%)</span><span>${formatCurrency(taxAmount)}</span></div>` : ''}
     <div style="display: flex; justify-content: space-between; padding-top: 0.75rem; border-top: 2px solid var(--color-accent);">
       <span style="font-size: 1.1rem; font-weight: 700;">Grand Total</span>
-      <span style="font-size: 1.3rem; font-weight: 800; color: var(--color-accent);">${formatCurrency(grandTotal)}/-</span>
+      <span style="font-size: 1.3rem; font-weight: 800; color: var(--color-accent);">${formatCurrency(totalWithTax)}/-</span>
     </div>
     ${state.systemSize ? `
       <div style="display: flex; justify-content: space-between; margin-top: 0.5rem;">
@@ -580,8 +748,24 @@ async function renderStep5(body) {
   const customer = await getCustomer(state.customerId);
   const subtotal = state.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
   let discountAmount = state.discountType === 'percent' ? subtotal * (state.discount / 100) : state.discount;
-  const grandTotal = subtotal - discountAmount;
+  const taxableAmount = Math.max(0, subtotal - discountAmount);
+  const taxAmount = taxableAmount * (state.taxRate / 100);
+  const grandTotal = taxableAmount + taxAmount;
   const systemLabel = SYSTEM_TYPES[state.systemType] || 'On-Grid';
+  const [companyName, companyAddress, companyPhone, companyWhatsapp, companyEmail, companyWebsite, companyTagline, companyCredentials] = await Promise.all([
+    getSetting('companyName'), getSetting('companyAddress'), getSetting('companyPhone'), getSetting('companyWhatsapp'),
+    getSetting('companyEmail'), getSetting('companyWebsite'), getSetting('companyTagline'), getSetting('companyCredentials'),
+  ]);
+  const company = {
+    name: companyName || 'Skyland Energy (Pvt.) Ltd',
+    address: companyAddress || '286 H-1, Johar Town, Lahore, Pakistan',
+    phone: companyPhone || '+92 42 32353019',
+    whatsapp: companyWhatsapp || '+92 310 8134361',
+    email: companyEmail || 'info@theskylandenergy.com',
+    website: companyWebsite || 'https://www.theskylandenergy.com',
+    tagline: companyTagline || 'Your Energy Management Company',
+    credentials: companyCredentials || 'AEDB & PEC Approved',
+  };
 
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -610,26 +794,43 @@ async function renderStep5(body) {
       <!-- Preview Document -->
       <div class="quotation-preview" id="quotation-preview">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
-          <img src="/Skyland Recreated Logo.svg" alt="Skyland Energy" style="height: 60px;" />
-          <div style="text-align: right; color: #666; font-size: 0.85rem;">
+          <div>
+            <img src="/Skyland Recreated Logo.svg" alt="Skyland Energy" style="height: 60px;" />
+            <div style="margin-top: 6px; color: #073d72; font-size: 0.72rem; font-weight: 700;">${escapeHtml(company.tagline)} · ${escapeHtml(company.credentials)}</div>
+          </div>
+          <div style="text-align: right; color: #555; font-size: 0.75rem; line-height: 1.55; max-width: 310px;">
+            <strong style="color: #073d72;">${escapeHtml(company.name)}</strong><br>
+            ${escapeHtml(company.address)}<br>
+            ${escapeHtml(company.phone)} · WhatsApp ${escapeHtml(company.whatsapp)}<br>
+            ${escapeHtml(company.email)} · ${escapeHtml(company.website.replace(/^https?:\/\//, ''))}
             <div>${dateStr}</div>
-            <div>Ref: ${state.quotationNumber}</div>
+            <div>Ref: ${escapeHtml(state.quotationNumber)}</div>
           </div>
         </div>
 
         <h2 style="font-size: 1.3rem; color: #073d72; margin-bottom: 1rem; text-align: center; border-bottom: 2px solid #073d72; padding-bottom: 0.5rem;">
-          Solar Proposal
+          TECHNICAL & COMMERCIAL PROPOSAL
         </h2>
 
         <div style="margin-bottom: 1.5rem; line-height: 1.8;">
-          <strong>${customer?.name || 'Customer'}</strong><br>
-          ${customer?.city || ''}<br><br>
-          Dear Sir,<br>
-          We are pleased to submit you the requested solar proposal. Please feel free to contact with us for any further suggestions or queries:
+          <strong>${escapeHtml(customer?.name || 'Customer')}</strong><br>
+          ${escapeHtml(customer?.city || '')}<br><br>
+          Dear Valued Customer,<br>
+          Thank you for considering Skyland Energy. We are pleased to submit this technical and commercial proposal based on the information currently available. Final engineering is subject to site verification.
+        </div>
+
+        <div style="background:#f3f7fb; border-left:4px solid #073d72; padding:12px 16px; margin-bottom:1.5rem;">
+          <strong style="color:#073d72;">Project Summary</strong>
+          <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 24px; margin-top:8px; font-size:.8rem;">
+            <div>System: <strong>${escapeHtml(state.systemSize)} kW ${escapeHtml(systemLabel)}</strong></div><div>DISCO: <strong>${escapeHtml(state.disco || 'To be confirmed')}</strong></div>
+            <div>Sanctioned load: <strong>${state.sanctionedLoad ? `${state.sanctionedLoad} kW` : 'To be confirmed'}</strong></div><div>Meter: <strong>${escapeHtml(state.meterPhase.replace('-', ' '))}</strong></div>
+            <div>Installation: <strong>${escapeHtml(state.roofType.replaceAll('-', ' '))}</strong></div><div>Site survey: <strong>${escapeHtml(state.siteSurveyStatus.replace('-', ' '))}</strong></div>
+            <div>Monthly usage: <strong>${state.monthlyUnits ? `${state.monthlyUnits} kWh` : 'Not provided'}</strong></div><div>Prosumer coordination: <strong>${state.prosumerIncluded ? 'Included' : 'Excluded'}</strong></div>
+          </div>
         </div>
 
         <h3 style="color: #073d72; margin-bottom: 1rem;">
-          Quotation for ${state.systemSize}-KW ${systemLabel} Solar System:
+          Quotation for ${escapeHtml(state.systemSize)}-KW ${escapeHtml(systemLabel)} Solar System:
         </h3>
 
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 1.5rem;">
@@ -645,7 +846,7 @@ async function renderStep5(body) {
             ${state.items.filter(i => i.name).map((item, idx) => `
               <tr style="border-bottom: 1px solid #e5e7eb; ${idx % 2 === 1 ? 'background: #f9fafb;' : ''}">
                 <td style="padding: 8px 12px; color: #666;">${idx + 1}</td>
-                <td style="padding: 8px 12px;">${item.name}</td>
+                <td style="padding: 8px 12px;">${escapeHtml(item.name)}</td>
                 <td style="padding: 8px 12px; text-align: center;">${item.quantity || '-'}</td>
                 <td style="padding: 8px 12px; text-align: right; font-weight: 500;">${formatCurrency(item.quantity * item.unitPrice).replace('PKR ', '')}</td>
               </tr>
@@ -662,6 +863,7 @@ async function renderStep5(body) {
                 <td style="padding: 8px 12px; text-align: right; color: #16a34a;">- ${formatCurrency(discountAmount).replace('PKR ', '')}</td>
               </tr>
             ` : ''}
+            ${taxAmount > 0 ? `<tr><td colspan="3" style="padding:8px 12px; text-align:right;">${escapeHtml(state.taxLabel)} (${state.taxRate}%)</td><td style="padding:8px 12px; text-align:right;">${formatCurrency(taxAmount).replace('PKR ', '')}</td></tr>` : ''}
             <tr style="background: #073d72; color: #fff;">
               <td colspan="3" style="padding: 10px 12px; text-align: right; font-weight: 700; font-size: 1rem;">Total</td>
               <td style="padding: 10px 12px; text-align: right; font-weight: 700; font-size: 1rem;">${formatCurrency(grandTotal).replace('PKR ', '')}/-</td>
@@ -671,7 +873,7 @@ async function renderStep5(body) {
 
         ${state.notes ? `
           <div style="margin-bottom: 1rem; font-style: italic; color: #666;">
-            Note: ${state.notes}
+            Note: ${escapeHtml(state.notes)}
           </div>
         ` : `
           <div style="margin-bottom: 1rem; font-style: italic; color: #666;">
@@ -679,9 +881,16 @@ async function renderStep5(body) {
           </div>
         `}
 
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin:1.5rem 0; font-size:.82rem;">
+          <div><h3 style="color:#073d72; margin-bottom:.5rem;">Delivery & Payment</h3><p>Estimated installation: ${state.installationDays} days after advance, site readiness and equipment availability.</p><ul style="padding-left:1.1rem; line-height:1.65;">${state.paymentSchedule.map(item => `<li>${escapeHtml(item.label)}: <strong>${item.percent}%</strong></li>`).join('')}</ul></div>
+          <div><h3 style="color:#073d72; margin-bottom:.5rem;">Warranty & After-Sales</h3><ul style="padding-left:1.1rem; line-height:1.65;"><li>Panels: ${escapeHtml(state.warranty.panels)}</li><li>Inverter: ${escapeHtml(state.warranty.inverter)}</li><li>Battery: ${escapeHtml(state.warranty.battery)}</li><li>Workmanship: ${escapeHtml(state.warranty.workmanship)}</li></ul></div>
+        </div>
+
+        <div style="background:#fff7ed; border:1px solid #fed7aa; padding:10px 12px; margin-bottom:1.25rem; font-size:.78rem; line-height:1.55;"><strong>Pakistan regulatory note:</strong> Any prosumer connection remains subject to the applicable NEPRA regulations, sanctioned-load limits, DISCO feasibility, transformer capacity, inspection and required fees. Coordination is included only when stated above; approval is not guaranteed by this quotation.</div>
+
         <h3 style="color: #073d72; margin-bottom: 0.75rem;">Terms & Conditions:</h3>
         <ol style="padding-left: 1.25rem; color: #555; font-size: 0.85rem; line-height: 1.8;">
-          ${(state.terms.length > 0 ? state.terms : DEFAULT_TERMS).map(t => `<li>${t}</li>`).join('')}
+          ${(state.terms.length > 0 ? state.terms : DEFAULT_TERMS).map(t => `<li>${escapeHtml(t)}</li>`).join('')}
         </ol>
 
         <div style="margin-top: 3rem; display: flex; justify-content: space-between;">
@@ -689,7 +898,8 @@ async function renderStep5(body) {
             <div style="margin-bottom: 0.5rem;"><strong>Thanks & Regards,</strong></div>
             <div style="margin-top: 2rem; border-top: 1px solid #999; padding-top: 0.5rem; width: 200px;">
               Sales Team<br>
-              <strong>Skyland Energy</strong>
+              <strong>${escapeHtml(company.name)}</strong><br>
+              <span style="font-size: 0.72rem; color: #666;">${escapeHtml(company.website.replace(/^https?:\/\//, ''))}</span>
             </div>
           </div>
           <div style="text-align: right;">
@@ -718,15 +928,29 @@ async function renderStep5(body) {
       customerId: state.customerId,
       systemSize: parseFloat(state.systemSize),
       systemType: state.systemType,
+      disco: state.disco,
+      sanctionedLoad: state.sanctionedLoad,
+      meterPhase: state.meterPhase,
+      roofType: state.roofType,
+      monthlyUnits: state.monthlyUnits,
+      monthlyBill: state.monthlyBill,
+      prosumerIncluded: state.prosumerIncluded,
+      siteSurveyStatus: state.siteSurveyStatus,
       items: state.items,
       subtotal,
       discount: state.discount,
       discountType: state.discountType,
+      taxLabel: state.taxLabel,
+      taxRate: state.taxRate,
+      taxAmount,
       grandTotal,
       exchangeRate: state.exchangeRate,
       termsAndConditions: state.terms,
       validityDays: state.validityDays,
       notes: state.notes,
+      installationDays: state.installationDays,
+      paymentSchedule: state.paymentSchedule,
+      warranty: state.warranty,
       status,
     };
 
@@ -755,6 +979,7 @@ async function renderStep5(body) {
   });
 
   body.querySelector('#download-pdf-btn')?.addEventListener('click', async () => {
+    const { generateQuotationPDF } = await import('../utils/pdf-generator.js');
     await saveQuotation('draft');
     const el = document.getElementById('quotation-preview');
     generateQuotationPDF(el, state.quotationNumber);

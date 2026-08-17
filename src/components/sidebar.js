@@ -3,8 +3,13 @@
 // ============================================
 import { navigate } from '../router.js';
 import { createIcon } from './icons.js';
+import { getCurrentUser, logout } from '../auth.js';
+import { escapeHtml } from '../utils/helpers.js';
 
 export function renderSidebar() {
+  const user = getCurrentUser();
+  const canManageUsers = ['super_admin', 'admin'].includes(user?.role);
+  const canManageCatalog = ['super_admin', 'admin', 'manager'].includes(user?.role);
   const sidebar = document.createElement('aside');
   sidebar.className = 'sidebar';
   sidebar.id = 'sidebar';
@@ -26,11 +31,15 @@ export function renderSidebar() {
       </a>
       <a class="sidebar-link" data-route="/products" href="#/products">
         ${createIcon('solar-panel')}
-        <span>Products</span>
+        <span>Product Catalog</span>
       </a>
       <a class="sidebar-link" data-route="/customers" href="#/customers">
         ${createIcon('users')}
         <span>Customers</span>
+      </a>
+      <a class="sidebar-link" data-route="/profile" href="#/profile">
+        ${createIcon('user')}
+        <span>My Account</span>
       </a>
 
       <div class="sidebar-section-label">Quotations</div>
@@ -43,19 +52,25 @@ export function renderSidebar() {
         <span>All Quotations</span>
       </a>
 
-      <div class="sidebar-section-label">Management</div>
+      ${canManageCatalog ? `<div class="sidebar-section-label">Management</div>
       <a class="sidebar-link" data-route="/rates" href="#/rates">
         ${createIcon('trending-up')}
-        <span>Rates</span>
+        <span>Price List</span>
       </a>
       <a class="sidebar-link" data-route="/settings" href="#/settings">
         ${createIcon('settings')}
         <span>Settings</span>
       </a>
+      ` : ''}
+      ${canManageUsers ? `<a class="sidebar-link" data-route="/users" href="#/users">${createIcon('users')}<span>Team Access</span></a>` : ''}
     </nav>
 
     <div class="sidebar-footer">
-      <p class="sidebar-footer-info">⚡ Skyland Energy v1.0</p>
+      <div class="sidebar-user">
+        ${user?.profilePicture ? `<img src="${escapeHtml(user.profilePicture)}" class="sidebar-user-avatar" alt="" />` : `<span class="sidebar-user-avatar sidebar-user-fallback">${escapeHtml(user?.firstName?.[0] || '?')}</span>`}
+        <div><strong>${escapeHtml(`${user?.firstName || ''} ${user?.lastName || ''}`.trim())}</strong><small>${escapeHtml((user?.role || '').replaceAll('_', ' '))}</small></div>
+        <button class="btn btn-ghost btn-icon btn-sm" id="logout-btn" title="Sign out">${createIcon('log-out')}</button>
+      </div>
     </div>
   `;
 
@@ -72,6 +87,12 @@ export function renderSidebar() {
         document.getElementById('sidebar-overlay')?.classList.remove('active');
       }
     });
+  });
+
+  sidebar.querySelector('#logout-btn')?.addEventListener('click', async () => {
+    await logout();
+    window.location.hash = '/login';
+    window.location.reload();
   });
 
   return sidebar;
