@@ -592,18 +592,16 @@ export const BOQ_TEMPLATE = [
 ];
 
 export const DEFAULT_TERMS = [
-  'Prices are valid for 5 days only from the date of quotation.',
-  'Advance amount @ 20% and remaining 80% amount will be received during installation.',
-  'System will be delivered and installed in 5 to 7 working days approx. subject to timely payments of funds.',
-  'Order will be confirmed upon receiving of advance payment.',
-  'Above prices are exclusive of all taxes, if applicable withholding tax, sales tax or any other taxes, same amount will be added in above mentioned prices.',
-  'The offer is based on the current exchange rate of US Dollar @ 1 USD = 285 PKR, any fluctuation can affect the quoted price.',
-  'Imported items delivery will be subject to the availability and Govt policies.',
-  'AC cable from inverters location to main DB (LT) will be provided by the client.',
-  'Net metering facility is not included in this quotation.',
-  'Zero export device and PV Genset controller scope is not included in above prices and will be charged separately if required.',
-  'The client shall arrange and maintain a comprehensive insurance policy covering loss, damage or delays resulting from any kind of Force Majeures and for any unforeseen events.',
-  'Client shall arrange and provide a stable internet (Wi-Fi) connection for remote monitoring of the installed solar system.',
+  'This proposal is valid for the stated validity period and is subject to equipment availability and exchange-rate movement.',
+  'Final system design, quantities, cable routes, structure and installation price are subject to site survey and approved engineering drawings.',
+  'The order is confirmed after receipt of the agreed advance payment. Delivery and installation timelines begin after payment, site readiness and design approval.',
+  'Taxes, duties, withholding, government charges and DISCO/NEPRA fees are excluded unless expressly shown in the commercial summary.',
+  'For prosumer projects, proposed capacity is subject to sanctioned load, applicable NEPRA regulations, DISCO feasibility, transformer capacity and inspection. Approval is not guaranteed.',
+  'Civil works, roof strengthening, waterproofing, utility upgrades, transformer work, generator integration and zero-export controls are excluded unless listed in the scope.',
+  'Equipment brands and models are as quoted. Any approved equivalent substitution requires written customer consent.',
+  'Manufacturer warranties apply to equipment; workmanship warranty applies only for the period expressly stated in this proposal.',
+  'Generation, bill-saving and payback figures are estimates, not guarantees, and vary with weather, shading, soiling, grid availability, tariff and customer consumption.',
+  'The customer will provide safe site access, a clear installation area and stable internet where remote monitoring is required.',
 ];
 
 export const DEFAULT_SETTINGS = {

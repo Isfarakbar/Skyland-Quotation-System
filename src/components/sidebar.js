@@ -31,7 +31,7 @@ export function renderSidebar() {
       </a>
       <a class="sidebar-link" data-route="/products" href="#/products">
         ${createIcon('solar-panel')}
-        <span>Products</span>
+        <span>Product Catalog</span>
       </a>
       <a class="sidebar-link" data-route="/customers" href="#/customers">
         ${createIcon('users')}
@@ -55,7 +55,7 @@ export function renderSidebar() {
       ${canManageCatalog ? `<div class="sidebar-section-label">Management</div>
       <a class="sidebar-link" data-route="/rates" href="#/rates">
         ${createIcon('trending-up')}
-        <span>Rates</span>
+        <span>Price List</span>
       </a>
       <a class="sidebar-link" data-route="/settings" href="#/settings">
         ${createIcon('settings')}

@@ -14,17 +14,24 @@ import { registerRoute, initRouter, onBeforeNavigate, navigate } from './router.
 import { renderSidebar, renderSidebarOverlay } from './components/sidebar.js';
 import { getCurrentUser, restoreSession } from './auth.js';
 
-// Pages
-import { renderDashboard } from './pages/dashboard.js';
-import { renderProducts } from './pages/products.js';
-import { renderCustomers } from './pages/customers.js';
-import { renderQuotationBuilder } from './pages/quotation-builder.js';
-import { renderQuotations } from './pages/quotations.js';
-import { renderRates } from './pages/rates.js';
-import { renderSettings } from './pages/settings.js';
-import { renderUsers } from './pages/users.js';
-import { renderProfile } from './pages/profile.js';
-import { renderForgotPassword, renderLogin, renderResetPassword, renderSignup } from './pages/auth.js';
+const lazyPage = (loader, exportName) => async params => {
+  const page = await loader();
+  return page[exportName](params);
+};
+
+const renderDashboard = lazyPage(() => import('./pages/dashboard.js'), 'renderDashboard');
+const renderProducts = lazyPage(() => import('./pages/products.js'), 'renderProducts');
+const renderCustomers = lazyPage(() => import('./pages/customers.js'), 'renderCustomers');
+const renderQuotationBuilder = lazyPage(() => import('./pages/quotation-builder.js'), 'renderQuotationBuilder');
+const renderQuotations = lazyPage(() => import('./pages/quotations.js'), 'renderQuotations');
+const renderRates = lazyPage(() => import('./pages/rates.js'), 'renderRates');
+const renderSettings = lazyPage(() => import('./pages/settings.js'), 'renderSettings');
+const renderUsers = lazyPage(() => import('./pages/users.js'), 'renderUsers');
+const renderProfile = lazyPage(() => import('./pages/profile.js'), 'renderProfile');
+const renderLogin = lazyPage(() => import('./pages/auth.js'), 'renderLogin');
+const renderSignup = lazyPage(() => import('./pages/auth.js'), 'renderSignup');
+const renderForgotPassword = lazyPage(() => import('./pages/auth.js'), 'renderForgotPassword');
+const renderResetPassword = lazyPage(() => import('./pages/auth.js'), 'renderResetPassword');
 
 async function init() {
   try {

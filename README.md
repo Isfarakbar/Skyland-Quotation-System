@@ -1,4 +1,4 @@
-# ⚡ Skyland Energy — Solar Sales Quotation & Inventory Management System
+# ⚡ Skyland Energy — Pakistan Solar Quotation System
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Node.js](https://img.shields.io/badge/Node.js-v18%2B-green.svg)
@@ -7,14 +7,18 @@
 ![Vite](https://img.shields.io/badge/Vite-v6-purple.svg)
 ![Brevo](https://img.shields.io/badge/Brevo-Email%20API-blue.svg)
 
-> A modern, full-stack, enterprise-grade Sales Quotation & Inventory Management System built for **Skyland Energy**. Designed to streamline the solar sales workflow—from product inventory and customer relationship management to automated 16-item Bill of Quantities (BOQ) calculations, PDF generation, WhatsApp messaging, and cloud email dispatch via Brevo API.
+> A modern, full-stack sales quotation and product price catalog built for **Skyland Energy**. It streamlines the solar sales workflow—from reusable panel, inverter, battery, accessory, and service selection to customer management, server-verified totals, PDF generation, WhatsApp messaging, and cloud email dispatch through Brevo.
 
 ---
 
 ## 🌟 Key Highlights & Features
 
 - 📊 **Real-Time Cloud Persistence**: Full backend powered by **Express** and **MongoDB Atlas** (`Mongoose` ORM) with automatic client-side IndexedDB caching for offline resilience.
-- ⚡ **Automated BOQ Quotation Builder**: 5-step wizard that auto-populates 16 standard BOQ line items, auto-calculates solar panel counts from system size (kW), computes subtotal, discounts, grand totals, and per-watt rates.
+- ⚡ **Pakistan-Focused Quotation Builder**: Select multiple panels, inverters, batteries, accessories, labour and services; capture DISCO, sanctioned load, meter phase, roof type and site survey; then calculate discounts, configurable taxes, totals and per-watt rates.
+- 🛠️ **Complete Installation Scope**: Add structure, protection, cabling, earthing, labour, design, testing, commissioning, transport and optional prosumer/DISCO coordination in one click.
+- 🤝 **Commercial Controls**: Configurable payment milestones, delivery timeline, product and workmanship warranties, regulatory notes, and server-verified totals.
+- 🚀 **Fast Route Loading**: Page-level code splitting keeps the initial Vercel browser bundle smaller and loads feature screens on demand.
+- 🧾 **No Stock Tracking**: The product area is a reusable price catalog. It does not maintain inventory quantities or stock movements.
 - 📦 **Product Catalog Management**: Dynamic grid view supporting solar panels, inverters (on-grid/hybrid), batteries, structures, cables, and accessories with image compression and upload handling.
 - 👥 **Customer CRM**: Complete customer lifecycle management with WhatsApp one-click contact links, search, filtering, and project classification (Residential / Commercial / Industrial).
 - 📄 **Branded PDF Generation**: Instant client-side A4 PDF proposal creation matching official Skyland Energy corporate templates.
@@ -93,7 +97,7 @@ graph TB
 
 | 5-Step Quotation Builder | Rates Management |
 |:---:|:---:|
-| BOQ auto-calculations, pricing, terms & preview | Weekly panel & inverter rate updates |
+| Project profile, equipment, installation scope, commercials & proposal | Weekly panel & inverter rate updates |
 
 ---
 
@@ -213,7 +217,7 @@ The integration suite verifies registration approval, role permissions, settings
 
 | Method | Endpoint | Description |
 |:---|:---|:---|
-| `GET` | `/api/products` | Retrieve all inventory products |
+| `GET` | `/api/products` | Retrieve all product catalog items |
 | `POST` | `/api/products` | Create a new product |
 | `PUT` | `/api/products/:id` | Update product details or price |
 | `DELETE` | `/api/products/:id` | Remove product |

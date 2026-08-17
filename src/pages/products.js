@@ -23,7 +23,7 @@ export async function renderProducts() {
         <button class="mobile-menu-toggle" id="mobile-menu-btn">${createIcon('menu')}</button>
         <div>
           <h1 class="page-title">Product Catalog</h1>
-          <p class="page-subtitle">${products.length} products</p>
+          <p class="page-subtitle">${products.length} reusable catalog items · prices only, no stock tracking</p>
         </div>
       </div>
       <div class="page-header-right">
@@ -49,6 +49,8 @@ export async function renderProducts() {
             <button class="tab-filter ${currentCategory === 'structure' ? 'active' : ''}" data-cat="structure">Structures</button>
             <button class="tab-filter ${currentCategory === 'cable' ? 'active' : ''}" data-cat="cable">Cables</button>
             <button class="tab-filter ${currentCategory === 'accessory' ? 'active' : ''}" data-cat="accessory">Accessories</button>
+            <button class="tab-filter ${currentCategory === 'service' ? 'active' : ''}" data-cat="service">Services</button>
+            <button class="tab-filter ${currentCategory === 'other' ? 'active' : ''}" data-cat="other">Other</button>
           </div>
         </div>
       </div>
@@ -195,6 +197,8 @@ function openProductForm(existingProduct = null) {
               <option value="structure" ${p.category === 'structure' ? 'selected' : ''}>Structure</option>
               <option value="cable" ${p.category === 'cable' ? 'selected' : ''}>Cable</option>
               <option value="accessory" ${p.category === 'accessory' ? 'selected' : ''}>Accessory</option>
+              <option value="service" ${p.category === 'service' ? 'selected' : ''}>Service</option>
+              <option value="other" ${p.category === 'other' ? 'selected' : ''}>Other</option>
             </select>
           </div>
           <div class="form-group">
@@ -237,12 +241,10 @@ function openProductForm(existingProduct = null) {
           </div>
         </div>
 
-        ${p.category === 'solar-panel' || (!p.category) ? `
-        <div class="form-group" id="price-per-watt-group">
+        <div class="form-group" id="price-per-watt-group" style="${p.category && p.category !== 'solar-panel' ? 'display:none;' : ''}">
           <label class="form-label">Price per Watt (PKR)</label>
           <input type="number" step="0.01" class="form-input" id="product-ppw" value="${p.pricePerWatt || ''}" placeholder="e.g., 41.00" />
         </div>
-        ` : ''}
       </div>
 
       <div class="modal-footer" style="margin: 1.5rem -1.5rem -1.5rem; padding: 1rem 1.5rem;">
@@ -284,6 +286,10 @@ function openProductForm(existingProduct = null) {
   };
 
   imageInput?.addEventListener('change', handleImageChange);
+  document.getElementById('product-category')?.addEventListener('change', (event) => {
+    const group = document.getElementById('price-per-watt-group');
+    if (group) group.style.display = event.target.value === 'solar-panel' ? '' : 'none';
+  });
 
   // Cancel
   document.getElementById('form-cancel')?.addEventListener('click', closeModal);

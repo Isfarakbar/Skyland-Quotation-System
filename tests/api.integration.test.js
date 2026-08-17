@@ -118,8 +118,10 @@ test('catalog and settings permissions follow the role matrix', async () => {
     login('admin@skyland.test'), login('pending.manager@skyland.test'), login('employee@skyland.test'),
   ]);
 
-  const product = await request('/api/products', { method: 'POST', cookie: managerCookie, body: { name: 'Audit Panel', category: 'solar-panel', unitPrice: 30000 } });
+  const product = await request('/api/products', { method: 'POST', cookie: managerCookie, body: { name: 'Audit Panel', category: 'solar-panel', unitPrice: 30000, stockQuantity: 999 } });
   assert.equal(product.status, 201);
+  assert.equal(product.data.stockQuantity, undefined);
+  assert.equal((await request('/api/products', { method: 'POST', cookie: managerCookie, body: { name: 'Invalid category', category: 'stock-room', unitPrice: 1 } })).status, 400);
   assert.equal((await request(`/api/products/${product.data.id}`, { method: 'DELETE', cookie: managerCookie })).status, 403);
   assert.equal((await request(`/api/products/${product.data.id}`, { method: 'DELETE', cookie: employeeCookie })).status, 403);
   assert.equal((await request(`/api/products/${product.data.id}`, { method: 'DELETE', cookie: adminCookie })).status, 200);
@@ -141,16 +143,32 @@ test('quotation totals, ownership, references, and linked deletes are protected'
     customerId: customer.data.id,
     systemSize: 10,
     systemType: 'ongrid',
-    items: [{ name: 'Solar equipment', quantity: 2, unitPrice: 50000, total: 1 }],
+    disco: 'LESCO',
+    sanctionedLoad: 10,
+    prosumerIncluded: true,
+    items: [
+      { productId: 'catalog-panel', name: 'Selected Solar Panel', category: 'solar-panel', quantity: 2, unitPrice: 50000, total: 1 },
+      { productId: 'catalog-battery', name: 'Selected Battery', category: 'battery', quantity: 3, unitPrice: 10000, total: 1 },
+    ],
     subtotal: 1,
     grandTotal: 1,
     discount: 10,
     discountType: 'percent',
+    taxLabel: 'Applicable taxes',
+    taxRate: 10,
+    paymentSchedule: [
+      { label: 'Advance', percent: 20 },
+      { label: 'Installation', percent: 70 },
+      { label: 'Commissioning', percent: 10 },
+    ],
   };
   const quote = await request('/api/quotations', { method: 'POST', cookie: employeeCookie, body: quoteBody });
   assert.equal(quote.status, 201);
-  assert.equal(quote.data.subtotal, 100000);
-  assert.equal(quote.data.grandTotal, 90000);
+  assert.equal(quote.data.subtotal, 130000);
+  assert.equal(quote.data.taxAmount, 11700);
+  assert.equal(quote.data.grandTotal, 128700);
+  assert.equal((await request('/api/quotations', { method: 'POST', cookie: employeeCookie, body: { ...quoteBody, quotationNumber: 'IC-SLE-OVERLOAD', systemSize: 11 } })).status, 400);
+  assert.equal((await request('/api/quotations', { method: 'POST', cookie: employeeCookie, body: { ...quoteBody, quotationNumber: 'IC-SLE-BADPAY', paymentSchedule: [{ label: 'Advance', percent: 80 }] } })).status, 400);
   assert.equal((await request('/api/quotations', { method: 'POST', cookie: employeeCookie, body: quoteBody })).status, 409);
   assert.equal((await request(`/api/customers/${customer.data.id}`, { method: 'DELETE', cookie: managerCookie })).status, 409);
   assert.equal((await request(`/api/quotations/${quote.data.id}`, { method: 'PUT', cookie: secondEmployeeCookie, body: { status: 'sent' } })).status, 403);

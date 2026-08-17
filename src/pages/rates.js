@@ -20,8 +20,8 @@ export async function renderRates() {
       <div class="page-header-left">
         <button class="mobile-menu-toggle" id="mobile-menu-btn">${createIcon('menu')}</button>
         <div>
-          <h1 class="page-title">Rates Management</h1>
-          <p class="page-subtitle">Update product prices — changes reflect in new quotations</p>
+          <h1 class="page-title">Catalog Price List</h1>
+          <p class="page-subtitle">Update reusable product prices — changes apply when a product is added to a new quotation</p>
         </div>
       </div>
       <div class="page-header-right">

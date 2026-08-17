@@ -180,6 +180,7 @@ export const CATEGORY_LABELS = {
   'cable': 'Cable',
   'accessory': 'Accessory',
   'service': 'Service',
+  'other': 'Other',
 };
 
 // Status display config

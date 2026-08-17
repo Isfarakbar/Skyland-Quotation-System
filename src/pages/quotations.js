@@ -272,6 +272,7 @@ async function showQuotationDetail(id) {
   const subtotal = (q.items || []).reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
   const discountAmount = q.discountType === 'percent' ? subtotal * ((q.discount || 0) / 100) : (q.discount || 0);
   const grandTotal = q.grandTotal || (subtotal - discountAmount);
+  const taxAmount = Number(q.taxAmount || 0);
   const terms = q.termsAndConditions || DEFAULT_TERMS;
   const dateStr = new Date(q.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const [companyName, companyAddress, companyPhone, companyWhatsapp, companyEmail, companyWebsite, companyTagline, companyCredentials] = await Promise.all([
@@ -321,7 +322,7 @@ async function showQuotationDetail(id) {
         </div>
 
         <h2 style="font-size: 1.3rem; color: #073d72; margin-bottom: 1rem; text-align: center; border-bottom: 2px solid #073d72; padding-bottom: 0.5rem;">
-          Solar Proposal
+          TECHNICAL & COMMERCIAL PROPOSAL
         </h2>
 
         <div style="margin-bottom: 1.5rem; line-height: 1.8;">
@@ -329,6 +330,12 @@ async function showQuotationDetail(id) {
           ${escapeHtml(customer?.city || '')}<br><br>
           Dear Valued Customer,<br>
           We are pleased to submit the requested solar proposal. Please contact our team with any questions or requested adjustments.
+        </div>
+
+        <div style="background:#f3f7fb; border-left:4px solid #073d72; padding:12px 16px; margin-bottom:1.5rem; font-size:.8rem; line-height:1.65;">
+          <strong style="color:#073d72;">Project Summary</strong><br>
+          ${escapeHtml(q.systemSize)} kW ${escapeHtml(systemLabel)} · DISCO: ${escapeHtml(q.disco || 'To be confirmed')} · Sanctioned load: ${q.sanctionedLoad ? `${q.sanctionedLoad} kW` : 'To be confirmed'}<br>
+          Meter: ${escapeHtml((q.meterPhase || 'unknown').replace('-', ' '))} · Installation: ${escapeHtml((q.roofType || 'rcc').replaceAll('-', ' '))} · Prosumer coordination: ${q.prosumerIncluded ? 'Included' : 'Excluded'}
         </div>
 
         <h3 style="color: #073d72; margin-bottom: 1rem;">
@@ -355,12 +362,20 @@ async function showQuotationDetail(id) {
             `).join('')}
           </tbody>
           <tfoot>
+            ${discountAmount > 0 ? `<tr><td colspan="3" style="padding:8px 12px; text-align:right;">Subtotal / Discount</td><td style="padding:8px 12px; text-align:right;">${formatCurrency(subtotal).replace('PKR ', '')} / -${formatCurrency(discountAmount).replace('PKR ', '')}</td></tr>` : ''}
+            ${taxAmount > 0 ? `<tr><td colspan="3" style="padding:8px 12px; text-align:right;">${escapeHtml(q.taxLabel || 'Applicable taxes')} (${q.taxRate || 0}%)</td><td style="padding:8px 12px; text-align:right;">${formatCurrency(taxAmount).replace('PKR ', '')}</td></tr>` : ''}
             <tr style="background: #073d72; color: #fff;">
               <td colspan="3" style="padding: 10px 12px; text-align: right; font-weight: 700;">Total</td>
               <td style="padding: 10px 12px; text-align: right; font-weight: 700;">${formatCurrency(grandTotal).replace('PKR ', '')}/-</td>
             </tr>
           </tfoot>
         </table>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin:1.5rem 0; font-size:.82rem;">
+          <div><h3 style="color:#073d72; margin-bottom:.5rem;">Delivery & Payment</h3><p>Estimated installation: ${q.installationDays || 7} days.</p><ul style="padding-left:1.1rem;">${(q.paymentSchedule || []).map(item => `<li>${escapeHtml(item.label)}: ${item.percent}%</li>`).join('')}</ul></div>
+          <div><h3 style="color:#073d72; margin-bottom:.5rem;">Warranty</h3><ul style="padding-left:1.1rem;"><li>Panels: ${escapeHtml(q.warranty?.panels || 'As per manufacturer')}</li><li>Inverter: ${escapeHtml(q.warranty?.inverter || 'As per manufacturer')}</li><li>Battery: ${escapeHtml(q.warranty?.battery || 'As per manufacturer')}</li><li>Workmanship: ${escapeHtml(q.warranty?.workmanship || 'As stated')}</li></ul></div>
+        </div>
+        <div style="background:#fff7ed; border:1px solid #fed7aa; padding:10px 12px; margin-bottom:1.25rem; font-size:.78rem;"><strong>Regulatory note:</strong> Prosumer connection is subject to applicable NEPRA regulations and DISCO feasibility, sanctioned load, transformer capacity, inspection and fees.</div>
 
         <h3 style="color: #073d72; margin-bottom: 0.75rem;">Terms & Conditions:</h3>
         <ol style="padding-left: 1.25rem; color: #555; font-size: 0.85rem; line-height: 1.8;">
