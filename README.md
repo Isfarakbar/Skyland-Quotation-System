@@ -169,8 +169,6 @@ Skyland Quotation System/
    ```env
    MONGODB_URI=your_mongodb_atlas_connection_string
    BREVO_API_KEY=your_brevo_api_key
-   APP_URL=http://localhost:5173
-   SUPER_ADMIN_EMAIL=admin@skylandenergy.pk
    SUPER_ADMIN_PASSWORD=use_a_unique_strong_password
    CLOUDINARY_CLOUD_NAME=your_cloud_name
    CLOUDINARY_API_KEY=your_numeric_api_key
