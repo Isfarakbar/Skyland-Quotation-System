@@ -94,6 +94,27 @@ router.post('/verify-email', async (req, res) => {
   res.json({ message: 'Email verified. Your account is ready for super admin review.' });
 });
 
+router.post('/resend-verification', async (req, res) => {
+  const responseMessage = 'If this account still needs verification, a new link has been sent.';
+  const user = await User.findOne({ email: normalizeEmail(req.body.email) })
+    .select('+emailVerificationTokenHash +emailVerificationExpiresAt');
+  if (!user || user.emailVerifiedAt || ['super_admin', 'admin'].includes(user.role)) return res.json({ message: responseMessage });
+
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  user.emailVerificationTokenHash = tokenHash(verificationToken);
+  user.emailVerificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  await user.save();
+  const appUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  await sendEmail({
+    to: user.email,
+    name: user.firstName,
+    subject: 'Your new Skyland email verification link',
+    html: `<p>Hello ${user.firstName},</p><p>Use this new link within 24 hours to verify your Skyland account.</p><p><a href="${appUrl}/#/verify-email/${verificationToken}">Verify email</a></p>`,
+  });
+  await writeAudit(req, { action: 'auth.verification_resent', entityType: 'user', entityId: user.id, summary: `A new verification link was issued for ${user.email}` });
+  res.json({ message: responseMessage });
+});
+
 router.post('/login', async (req, res) => {
   const email = normalizeEmail(req.body.email);
   const user = await User.findOne({ email }).select('+passwordHash +failedLoginAttempts +lockedUntil +mfaSecret +mfaRecoveryCodeHashes');
@@ -105,6 +126,14 @@ router.post('/login', async (req, res) => {
       await user.save();
     }
     return fail(res, 401, 'INVALID_CREDENTIALS', 'Invalid email or password');
+  }
+  if (!user.emailVerifiedAt && user.status === 'active' && user.approvedAt) {
+    const legacyAccount = await User.exists({ _id: user.id, emailVerifiedAt: { $exists: false } });
+    if (legacyAccount) {
+      user.emailVerifiedAt = user.approvedAt;
+      await user.save();
+      await writeAudit(req, { action: 'auth.legacy_email_backfilled', entityType: 'user', entityId: user.id, summary: `Restored verification state for approved legacy account ${user.email}` });
+    }
   }
   if (!user.emailVerifiedAt && process.env.EMAIL_DISABLED !== '1' && !['super_admin', 'admin'].includes(user.role)) return fail(res, 403, 'EMAIL_UNVERIFIED', 'Verify your email before signing in');
   if (user.status === 'pending') return fail(res, 403, 'APPROVAL_PENDING', 'Your registration is awaiting super admin approval');

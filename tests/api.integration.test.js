@@ -112,6 +112,31 @@ test('registration remains pending until a super admin approves it', async () =>
   assert.ok(await login('pending.manager@skyland.test'));
 });
 
+test('approved legacy accounts recover verification without bypassing new unverified accounts', async () => {
+  const approvedAt = new Date('2026-08-01T00:00:00.000Z');
+  await User.collection.insertOne({
+    ...profile,
+    dateOfBirth: new Date(profile.dateOfBirth),
+    firstName: 'Legacy', lastName: 'Employee', email: 'legacy.employee@skyland.test', cnic: 'AUDIT-LEGACY-EMPLOYEE',
+    role: 'employee', status: 'active', approvedAt, passwordHash: await bcrypt.hash(password, 4), createdAt: approvedAt, updatedAt: approvedAt,
+  });
+  await createActiveUser({ firstName: 'Unverified', email: 'unverified.employee@skyland.test', role: 'employee', cnic: 'AUDIT-UNVERIFIED-EMPLOYEE' });
+
+  process.env.EMAIL_DISABLED = '0';
+  try {
+    const legacyLogin = await request('/api/auth/login', { method: 'POST', body: { email: 'legacy.employee@skyland.test', password } });
+    assert.equal(legacyLogin.status, 200, JSON.stringify(legacyLogin.data));
+    const repaired = await User.collection.findOne({ email: 'legacy.employee@skyland.test' });
+    assert.deepEqual(repaired.emailVerifiedAt, approvedAt);
+
+    const unverifiedLogin = await request('/api/auth/login', { method: 'POST', body: { email: 'unverified.employee@skyland.test', password } });
+    assert.equal(unverifiedLogin.status, 403);
+    assert.equal(unverifiedLogin.data.error.code, 'EMAIL_UNVERIFIED');
+  } finally {
+    process.env.EMAIL_DISABLED = '1';
+  }
+});
+
 test('catalog and settings permissions follow the role matrix', async () => {
   await createActiveUser({ firstName: 'Admin', email: 'admin@skyland.test', role: 'admin', cnic: 'AUDIT-ADMIN' });
   await createActiveUser({ firstName: 'Employee', email: 'employee@skyland.test', role: 'employee', cnic: 'AUDIT-EMPLOYEE' });

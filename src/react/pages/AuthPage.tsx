@@ -20,6 +20,7 @@ export default function AuthPage() {
   const [message, setMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [mfaRequired, setMfaRequired] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState('');
   const [registration, setRegistration] = useState(initialRegistration);
 
   const mode = pathname.startsWith('/signup') ? 'signup' : pathname.startsWith('/forgot-password') ? 'forgot' : pathname.startsWith('/reset-password') ? 'reset' : pathname.startsWith('/verify-email') ? 'verify' : 'login';
@@ -31,10 +32,17 @@ export default function AuthPage() {
   }, [mode, token]);
 
   async function submitLogin(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true); setMessage('');
+    event.preventDefault(); setBusy(true); setMessage(''); setUnverifiedEmail('');
     const data = new FormData(event.currentTarget);
     try { await login(String(data.get('email')), String(data.get('password')), String(data.get('mfaCode') || '')); navigate('/dashboard'); }
-    catch (error) { if (error instanceof ApiError && error.code === 'MFA_REQUIRED') setMfaRequired(true); setMessage(error instanceof Error ? error.message : 'Sign in failed'); }
+    catch (error) { if (error instanceof ApiError && error.code === 'MFA_REQUIRED') setMfaRequired(true); if (error instanceof ApiError && error.code === 'EMAIL_UNVERIFIED') setUnverifiedEmail(String(data.get('email'))); setMessage(error instanceof Error ? error.message : 'Sign in failed'); }
+    finally { setBusy(false); }
+  }
+
+  async function resendVerification() {
+    setBusy(true); setMessage('');
+    try { const result = await api<{ message: string }>('/auth/resend-verification', { method: 'POST', ...jsonBody({ email: unverifiedEmail }) }); setMessage(result.message); }
+    catch (error) { setMessage(error instanceof Error ? error.message : 'Could not send a new verification link'); }
     finally { setBusy(false); }
   }
 
@@ -63,7 +71,7 @@ export default function AuthPage() {
   const passwordInput = (name = 'password', label = 'Password') => <Field label={label}><div className="password-field"><input className="input" name={name} type={showPassword ? 'text' : 'password'} autoComplete={name === 'password' && mode === 'login' ? 'current-password' : 'new-password'} required minLength={10}/><button type="button" onClick={() => setShowPassword(value => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff/> : <Eye/>}</button></div></Field>;
 
   return <div className="auth-layout"><BrandPanel/><main className="auth-main"><div className={`auth-card ${mode === 'signup' ? 'auth-card--wide' : ''}`}>
-    {mode === 'login' && <><span className="auth-icon"><LockKeyhole/></span><h2>Welcome back</h2><p>Sign in to continue to the quotation workspace.</p><form onSubmit={submitLogin} className="form-stack"><Field label="Email address"><input className="input" type="email" name="email" autoComplete="email" required/></Field>{passwordInput()}{mfaRequired && <Field label="Authenticator code"><input className="input" name="mfaCode" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoFocus required/></Field>}{message && <div className="form-message" role="alert">{message}</div>}<Button disabled={busy} type="submit">{busy ? 'Signing in…' : 'Sign in'}</Button><Link className="auth-link" to="/forgot-password">Forgot password?</Link></form><div className="auth-footer">Need access? <Link to="/signup">Request an account</Link></div></>}
+    {mode === 'login' && <><span className="auth-icon"><LockKeyhole/></span><h2>Welcome back</h2><p>Sign in to continue to the quotation workspace.</p><form onSubmit={submitLogin} className="form-stack"><Field label="Email address"><input className="input" type="email" name="email" autoComplete="email" required/></Field>{passwordInput()}{mfaRequired && <Field label="Authenticator code"><input className="input" name="mfaCode" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoFocus required/></Field>}{message && <div className="form-message" role="alert">{message}</div>}{unverifiedEmail && <Button tone="secondary" type="button" disabled={busy} onClick={resendVerification}><Mail/>Send a new verification link</Button>}<Button disabled={busy} type="submit">{busy ? 'Signing in…' : 'Sign in'}</Button><Link className="auth-link" to="/forgot-password">Forgot password?</Link></form><div className="auth-footer">Need access? <Link to="/signup">Request an account</Link></div></>}
     {mode === 'forgot' && <><span className="auth-icon"><Mail/></span><h2>Reset your password</h2><p>We will send instructions if an active account exists.</p><form onSubmit={event => submitEmail(event)} className="form-stack"><Field label="Email address"><input className="input" name="email" type="email" required/></Field>{message && <div className="form-message" role="status">{message}</div>}<Button disabled={busy}>{busy ? 'Sending…' : 'Send reset link'}</Button><Link className="auth-link" to="/login">Back to sign in</Link></form></>}
     {mode === 'reset' && <><span className="auth-icon"><LockKeyhole/></span><h2>Choose a new password</h2><p>Use at least 10 characters with upper, lower and a number.</p><form onSubmit={event => submitEmail(event, true)} className="form-stack">{passwordInput('password', 'New password')}{message && <div className="form-message" role="alert">{message}</div>}<Button disabled={busy}>Update password</Button></form></>}
     {mode === 'verify' && <><span className="auth-icon"><ShieldCheck/></span><h2>Verify your email</h2><p>{busy ? 'Checking your verification link…' : message}</p>{!busy && <Button onClick={() => navigate('/login')}>Continue to sign in</Button>}</>}

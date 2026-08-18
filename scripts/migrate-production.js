@@ -16,6 +16,7 @@ try {
     quotationsMissingRevision: await Quotation.countDocuments({ revision: { $exists: false } }),
     quotationsMissingAssignee: await Quotation.countDocuments({ assignedTo: { $exists: false } }),
     productsMissingActive: await Product.countDocuments({ active: { $exists: false } }),
+    approvedLegacyUsersMissingVerification: await mongoose.connection.collection('users').countDocuments({ status: 'active', approvedAt: { $ne: null }, emailVerifiedAt: { $exists: false } }),
   };
   console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', before }, null, 2));
   if (!apply) {
@@ -25,6 +26,10 @@ try {
     await Quotation.updateMany({ assignedTo: { $exists: false }, createdBy: { $ne: null } }, [{ $set: { assignedTo: '$createdBy' } }]);
     await Customer.updateMany({ assignedTo: { $exists: false }, createdBy: { $ne: null } }, [{ $set: { assignedTo: '$createdBy' } }]);
     await Product.updateMany({ active: { $exists: false } }, { $set: { active: true } });
+    await mongoose.connection.collection('users').updateMany(
+      { status: 'active', approvedAt: { $ne: null }, emailVerifiedAt: { $exists: false } },
+      [{ $set: { emailVerifiedAt: '$approvedAt' } }],
+    );
     const after = {
       quotations: await Quotation.countDocuments(),
       customers: await Customer.countDocuments(),
@@ -32,6 +37,7 @@ try {
       quotationsMissingRevision: await Quotation.countDocuments({ revision: { $exists: false } }),
       quotationsMissingAssignee: await Quotation.countDocuments({ assignedTo: { $exists: false } }),
       productsMissingActive: await Product.countDocuments({ active: { $exists: false } }),
+      approvedLegacyUsersMissingVerification: await mongoose.connection.collection('users').countDocuments({ status: 'active', approvedAt: { $ne: null }, emailVerifiedAt: { $exists: false } }),
     };
     if (before.quotations !== after.quotations || before.customers !== after.customers || before.products !== after.products) throw new Error('Record count verification failed');
     console.log(JSON.stringify({ mode: 'complete', after }, null, 2));
