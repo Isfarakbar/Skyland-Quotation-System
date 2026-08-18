@@ -69,7 +69,7 @@ export async function requireAuth(req, res, next) {
 }
 
 export function requireCsrf(req, res, next) {
-  if (/^\/auth\/(login|register|forgot-password|reset-password|verify-email)$/.test(req.path) || req.path === '/uploads/registration-profile') return next();
+  if (/^\/auth\/(login|register|forgot-password|reset-password|verify-email|resend-verification)$/.test(req.path) || req.path === '/uploads/registration-profile') return next();
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || !req.cookies?.[AUTH_COOKIE] || !req.get('origin')) return next();
   const cookieToken = String(req.cookies?.[CSRF_COOKIE] || '');
   const headerToken = String(req.get('x-csrf-token') || '');

@@ -22,12 +22,13 @@ const profile = {
   emergencyContactPhone: '03111111111',
 };
 
-async function request(path, { method = 'GET', cookie, body } = {}) {
+async function request(path, { method = 'GET', cookie, body, headers = {} } = {}) {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
     headers: {
       ...(cookie ? { Cookie: cookie } : {}),
       ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...headers,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -132,6 +133,8 @@ test('approved legacy accounts recover verification without bypassing new unveri
     const unverifiedLogin = await request('/api/auth/login', { method: 'POST', body: { email: 'unverified.employee@skyland.test', password } });
     assert.equal(unverifiedLogin.status, 403);
     assert.equal(unverifiedLogin.data.error.code, 'EMAIL_UNVERIFIED');
+    const resendWithStaleCookie = await request('/api/auth/resend-verification', { method: 'POST', cookie: 'skyland_session=stale', headers: { Origin: 'http://localhost.test' }, body: { email: 'missing@skyland.test' } });
+    assert.equal(resendWithStaleCookie.status, 200);
   } finally {
     process.env.EMAIL_DISABLED = '1';
   }
