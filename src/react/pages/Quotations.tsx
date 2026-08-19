@@ -139,7 +139,10 @@ export default function Quotations() {
       ) {
         return api(`/quotations/${rowId(statusRow)}/approval`, {
           method: "PATCH",
-          ...jsonBody({ decision: nextStatus, note: "Reviewed from quotation list" }),
+          ...jsonBody({
+            decision: nextStatus,
+            note: "Reviewed from quotation list",
+          }),
         });
       }
       return api(`/quotations/${rowId(statusRow!)}/status`, {
@@ -170,9 +173,8 @@ export default function Quotations() {
   async function downloadPdf() {
     const element = document.getElementById("react-quote-preview");
     if (!element || !pdfRow) return;
-    const { generateQuotationPDF } = await import(
-      "../../utils/pdf-generator.js"
-    );
+    const { generateQuotationPDF } =
+      await import("../../utils/pdf-generator.js");
     await generateQuotationPDF(element, pdfRow.quotationNumber);
   }
   const statuses = [
@@ -512,8 +514,16 @@ export default function Quotations() {
                         <td>
                           {item.quantity} {item.unit}
                         </td>
-                        <td>{money(item.unitPrice)}</td>
-                        <td>{money(item.quantity * item.unitPrice)}</td>
+                        <td>
+                          {item.unitPrice === 0
+                            ? "Included / survey"
+                            : money(item.unitPrice)}
+                        </td>
+                        <td>
+                          {item.unitPrice === 0
+                            ? "Included / survey"
+                            : money(item.quantity * item.unitPrice)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -16,6 +16,7 @@ import usersRouter from "./routes/users.js";
 import uploadsRouter from "./routes/uploads.js";
 import auditRouter from "./routes/audit.js";
 import templatesRouter from "./routes/templates.js";
+import quotationEngineRouter from "./routes/quotation-engine.js";
 import { AUTH_COOKIE, requireAuth, requireCsrf } from "./middleware/auth.js";
 import { requestId, safeFields, safeMessage } from "./lib/api.js";
 
@@ -112,15 +113,13 @@ app.use("/api", async (req, res, next) => {
   } catch (error) {
     initializationPromise = null;
     console.error("Database connection middleware error:", error);
-    res
-      .status(503)
-      .json({
-        error: {
-          code: "DATABASE_UNAVAILABLE",
-          message: "The data service is temporarily unavailable",
-          requestId: req.id,
-        },
-      });
+    res.status(503).json({
+      error: {
+        code: "DATABASE_UNAVAILABLE",
+        message: "The data service is temporarily unavailable",
+        requestId: req.id,
+      },
+    });
   }
 });
 
@@ -138,29 +137,26 @@ app.use("/api/email", emailRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/audit", auditRouter);
 app.use("/api/templates", templatesRouter);
+app.use("/api/quotation-engine", quotationEngineRouter);
 
 app.use("/api", (req, res) =>
-  res
-    .status(404)
-    .json({
-      error: {
-        code: "NOT_FOUND",
-        message: "API endpoint not found",
-        requestId: req.id,
-      },
-    }),
+  res.status(404).json({
+    error: {
+      code: "NOT_FOUND",
+      message: "API endpoint not found",
+      requestId: req.id,
+    },
+  }),
 );
 app.use((error, req, res, _next) => {
   if (error?.code === "LIMIT_FILE_SIZE")
-    return res
-      .status(413)
-      .json({
-        error: {
-          code: "UPLOAD_TOO_LARGE",
-          message: "Image must be 5MB or smaller",
-          requestId: req.id,
-        },
-      });
+    return res.status(413).json({
+      error: {
+        code: "UPLOAD_TOO_LARGE",
+        message: "Image must be 5MB or smaller",
+        requestId: req.id,
+      },
+    });
   const status =
     error?.status ||
     (error?.code === 11000
@@ -182,16 +178,14 @@ app.use((error, req, res, _next) => {
           ? "INTERNAL_ERROR"
           : "REQUEST_INVALID";
   const fields = safeFields(error);
-  res
-    .status(status)
-    .json({
-      error: {
-        code,
-        message,
-        ...(fields ? { fields } : {}),
-        requestId: req.id,
-      },
-    });
+  res.status(status).json({
+    error: {
+      code,
+      message,
+      ...(fields ? { fields } : {}),
+      requestId: req.id,
+    },
+  });
 });
 
 // Start Server in local dev environment

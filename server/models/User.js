@@ -1,36 +1,80 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-export const USER_ROLES = ['super_admin', 'admin', 'manager', 'employee'];
-export const USER_STATUSES = ['pending', 'active', 'suspended', 'rejected'];
+export const USER_ROLES = ["super_admin", "admin", "manager", "employee"];
+export const USER_STATUSES = ["pending", "active", "suspended", "rejected"];
 export const USER_PERMISSION_KEYS = [
-  'products_manage', 'products_delete', 'rates_view', 'rates_manage',
-  'customers_manage_all', 'customers_delete', 'quotations_manage_all',
-  'quotations_delete', 'quotations_send_all', 'settings_manage',
-  'customers_view_all', 'customers_delete_own', 'customers_delete_all',
-  'quotations_view_all', 'quotations_delete_own', 'quotations_delete_all',
-  'quotations_approve', 'exports_manage', 'users_view_sensitive',
-  'users_manage_permissions', 'security_manage', 'audit_view',
+  "products_manage",
+  "products_delete",
+  "rates_view",
+  "rates_manage",
+  "customers_manage_all",
+  "customers_delete",
+  "quotations_manage_all",
+  "quotations_delete",
+  "quotations_send_all",
+  "settings_manage",
+  "customers_view_all",
+  "customers_delete_own",
+  "customers_delete_all",
+  "quotations_view_all",
+  "quotations_delete_own",
+  "quotations_delete_all",
+  "quotations_approve",
+  "exports_manage",
+  "users_view_sensitive",
+  "users_manage_permissions",
+  "security_manage",
+  "audit_view",
+  "auto_quote_generate",
+  "auto_quote_override",
+  "auto_quote_rules_manage",
 ];
 
-const allPermissions = Object.fromEntries(USER_PERMISSION_KEYS.map(key => [key, true]));
+const allPermissions = Object.fromEntries(
+  USER_PERMISSION_KEYS.map((key) => [key, true]),
+);
 export const ROLE_PERMISSION_DEFAULTS = {
   super_admin: allPermissions,
   admin: allPermissions,
   manager: {
-    products_manage: true, products_delete: false, rates_view: true, rates_manage: true,
-    customers_manage_all: true, customers_delete: true, quotations_manage_all: true,
-    quotations_delete: true, quotations_send_all: true, settings_manage: true,
-    customers_view_all: true, customers_delete_own: true, customers_delete_all: true,
-    quotations_view_all: true, quotations_delete_own: true, quotations_delete_all: true,
-    quotations_approve: true, exports_manage: true, users_view_sensitive: false,
-    users_manage_permissions: false, security_manage: false, audit_view: false,
+    products_manage: true,
+    products_delete: false,
+    rates_view: true,
+    rates_manage: true,
+    customers_manage_all: true,
+    customers_delete: true,
+    quotations_manage_all: true,
+    quotations_delete: true,
+    quotations_send_all: true,
+    settings_manage: true,
+    customers_view_all: true,
+    customers_delete_own: true,
+    customers_delete_all: true,
+    quotations_view_all: true,
+    quotations_delete_own: true,
+    quotations_delete_all: true,
+    quotations_approve: true,
+    exports_manage: true,
+    users_view_sensitive: false,
+    users_manage_permissions: false,
+    security_manage: false,
+    audit_view: false,
+    auto_quote_generate: true,
+    auto_quote_override: false,
+    auto_quote_rules_manage: false,
   },
-  employee: Object.fromEntries(USER_PERMISSION_KEYS.map(key => [key, false])),
+  employee: Object.fromEntries(USER_PERMISSION_KEYS.map((key) => [key, false])),
 };
 
 export function getEffectivePermissions(user) {
-  const overrides = user?.permissions instanceof Map ? Object.fromEntries(user.permissions) : (user?.permissions || {});
-  const effective = { ...(ROLE_PERMISSION_DEFAULTS[user?.role] || {}), ...overrides };
+  const overrides =
+    user?.permissions instanceof Map
+      ? Object.fromEntries(user.permissions)
+      : user?.permissions || {};
+  const effective = {
+    ...(ROLE_PERMISSION_DEFAULTS[user?.role] || {}),
+    ...overrides,
+  };
   if (effective.rates_manage) effective.rates_view = true;
   // Preserve permissions granted before the expanded policy was introduced.
   if (effective.customers_manage_all) effective.customers_view_all = true;
@@ -44,28 +88,48 @@ const userSchema = new mongoose.Schema(
   {
     firstName: { type: String, required: true, trim: true, maxlength: 60 },
     lastName: { type: String, required: true, trim: true, maxlength: 60 },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+      index: true,
+    },
     passwordHash: { type: String, required: true, select: false },
     phone: { type: String, required: true, trim: true },
-    alternatePhone: { type: String, default: '', trim: true },
+    alternatePhone: { type: String, default: "", trim: true },
     dateOfBirth: { type: Date, required: true },
-    gender: { type: String, enum: ['male', 'female', 'other', 'prefer_not_to_say'], required: true },
+    gender: {
+      type: String,
+      enum: ["male", "female", "other", "prefer_not_to_say"],
+      required: true,
+    },
     cnic: { type: String, required: true, trim: true, unique: true },
     address: { type: String, required: true, trim: true, maxlength: 300 },
     city: { type: String, required: true, trim: true },
     department: { type: String, required: true, trim: true },
     designation: { type: String, required: true, trim: true },
-    employeeId: { type: String, default: '', trim: true },
-    profilePicture: { type: String, default: '' },
+    employeeId: { type: String, default: "", trim: true },
+    profilePicture: { type: String, default: "" },
     emergencyContactName: { type: String, required: true, trim: true },
     emergencyContactPhone: { type: String, required: true, trim: true },
-    role: { type: String, enum: USER_ROLES, default: 'employee', index: true },
+    role: { type: String, enum: USER_ROLES, default: "employee", index: true },
     permissions: { type: Map, of: Boolean, default: () => ({}) },
-    status: { type: String, enum: USER_STATUSES, default: 'pending', index: true },
-    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    status: {
+      type: String,
+      enum: USER_STATUSES,
+      default: "pending",
+      index: true,
+    },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     approvedAt: { type: Date, default: null },
     lastLoginAt: { type: Date, default: null },
-    lastLoginIp: { type: String, default: '' },
+    lastLoginIp: { type: String, default: "" },
     emailVerifiedAt: { type: Date, default: null },
     emailVerificationTokenHash: { type: String, select: false, default: null },
     emailVerificationExpiresAt: { type: Date, select: false, default: null },
@@ -99,7 +163,7 @@ const userSchema = new mongoose.Schema(
         return ret;
       },
     },
-  }
+  },
 );
 
-export const User = mongoose.models.User || mongoose.model('User', userSchema);
+export const User = mongoose.models.User || mongoose.model("User", userSchema);

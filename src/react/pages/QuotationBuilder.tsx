@@ -6,20 +6,30 @@ import {
   CheckCircle2,
   FileCheck2,
   FileText,
+  Gauge,
   Mail,
   Plus,
   Save,
   Search,
   Send,
   Sparkles,
+  WandSparkles,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiError, api, jsonBody } from "../lib/api";
-import type { Customer, Product, Quotation, QuoteItem } from "../types";
+import type {
+  Customer,
+  EngineInput,
+  EnginePreview,
+  Product,
+  Quotation,
+  QuoteItem,
+} from "../types";
 import { money, titleCase } from "../lib/format";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../context/AuthContext";
 import {
   Badge,
   Button,
@@ -36,7 +46,16 @@ interface Draft {
   customerId: string;
   templateId: string;
   systemSize: number;
+  systemUnit: "kW" | "MW";
   systemType: "ongrid" | "hybrid" | "offgrid";
+  panelBrand: string;
+  inverterBrand: string;
+  includeBattery: boolean;
+  batteryBrand: string;
+  backupLoadKw: number;
+  backupHours: number;
+  roofType: string;
+  prosumerIncluded: boolean;
   items: QuoteItem[];
   discount: number;
   discountType: "percent" | "fixed";
@@ -63,7 +82,16 @@ const initialDraft = (): Draft => ({
   customerId: "",
   templateId: "",
   systemSize: 10,
+  systemUnit: "kW",
   systemType: "ongrid",
+  panelBrand: "",
+  inverterBrand: "",
+  includeBattery: false,
+  batteryBrand: "",
+  backupLoadKw: 5,
+  backupHours: 2,
+  roofType: "rcc",
+  prosumerIncluded: false,
   items: [],
   discount: 0,
   discountType: "percent",
@@ -87,14 +115,17 @@ export default function QuotationBuilder() {
   const navigate = useNavigate();
   const client = useQueryClient();
   const { notify } = useToast();
+  const { hasPermission } = useAuth();
   const [step, setStep] = useState(1);
   const [search, setSearch] = useState("");
+  const [manualMode, setManualMode] = useState(false);
+  const [preview, setPreview] = useState<EnginePreview | null>(null);
   const [draft, setDraft] = useState<Draft>(() => {
     try {
-      return (
-        JSON.parse(sessionStorage.getItem("skyland:draft") || "") ||
-        initialDraft()
-      );
+      return {
+        ...initialDraft(),
+        ...(JSON.parse(sessionStorage.getItem("skyland:draft") || "") || {}),
+      };
     } catch {
       return initialDraft();
     }
@@ -111,6 +142,18 @@ export default function QuotationBuilder() {
     queryKey: ["quotation-templates"],
     queryFn: () => api<QuoteTemplate[]>("/templates"),
   });
+  const engineOptions = useQuery({
+    queryKey: ["quotation-engine-options", draft.systemSize, draft.systemType],
+    queryFn: () =>
+      api<{
+        panelBrands: string[];
+        inverterBrands: string[];
+        batteryBrands: string[];
+      }>(
+        `/quotation-engine/options?systemSizeKw=${draft.systemSize}&systemType=${draft.systemType}`,
+      ),
+    enabled: hasPermission("auto_quote_generate"),
+  });
   const existing = useQuery({
     queryKey: ["quotation", id],
     queryFn: () => api<Quotation>(`/quotations/${id}`),
@@ -122,6 +165,9 @@ export default function QuotationBuilder() {
       setDraft((value) => ({ ...value, customerId: selected }));
   }, [searchParams, id]);
   useEffect(() => {
+    if (!hasPermission("auto_quote_generate")) setManualMode(true);
+  }, [hasPermission]);
+  useEffect(() => {
     if (!existing.data) return;
     const row = existing.data;
     setDraft({
@@ -129,7 +175,16 @@ export default function QuotationBuilder() {
       customerId: row.customerId,
       templateId: row.templateId || "",
       systemSize: row.systemSize,
+      systemUnit: row.systemSize >= 1000 ? "MW" : "kW",
       systemType: row.systemType,
+      panelBrand: row.generation?.input.panelBrand || "",
+      inverterBrand: row.generation?.input.inverterBrand || "",
+      includeBattery: row.generation?.input.includeBattery || false,
+      batteryBrand: row.generation?.input.batteryBrand || "",
+      backupLoadKw: row.generation?.input.backupLoadKw || 0,
+      backupHours: row.generation?.input.backupHours || 0,
+      roofType: row.generation?.input.roofType || "rcc",
+      prosumerIncluded: row.generation?.input.prosumerIncluded || false,
       items: row.items,
       discount: row.discount || 0,
       discountType: row.discountType || "percent",
@@ -141,6 +196,16 @@ export default function QuotationBuilder() {
       followUpNote: row.followUpNote || "",
       paymentSchedule: row.paymentSchedule || initialDraft().paymentSchedule,
     });
+    setManualMode(!row.generation);
+    setPreview(
+      row.generation
+        ? ({
+            ...row.generation,
+            items: row.items,
+            subtotal: row.subtotal,
+          } as EnginePreview)
+        : null,
+    );
   }, [existing.data]);
   useEffect(() => {
     const timer = window.setTimeout(
@@ -191,6 +256,13 @@ export default function QuotationBuilder() {
           ...item,
           total: item.quantity * item.unitPrice,
         })),
+        generation:
+          preview && !manualMode
+            ? {
+                input: preview.input,
+                digest: preview.digest,
+              }
+            : null,
       };
       const result = await api<Quotation>(
         id ? `/quotations/${id}` : "/quotations",
@@ -248,6 +320,33 @@ export default function QuotationBuilder() {
       notify(detail || error.message, "error");
     },
   });
+  const generate = useMutation({
+    mutationFn: () => {
+      const input: EngineInput = {
+        systemSizeKw: draft.systemSize,
+        systemType: draft.systemType,
+        panelBrand: draft.panelBrand,
+        inverterBrand: draft.inverterBrand,
+        includeBattery: draft.systemType !== "ongrid" || draft.includeBattery,
+        batteryBrand: draft.batteryBrand,
+        backupLoadKw: draft.backupLoadKw,
+        backupHours: draft.backupHours,
+        roofType: draft.roofType,
+        prosumerIncluded: draft.prosumerIncluded,
+      };
+      return api<EnginePreview>("/quotation-engine/preview", {
+        method: "POST",
+        ...jsonBody(input),
+        timeout: 20_000,
+      });
+    },
+    onSuccess: (result) => {
+      setPreview(result);
+      setDraft((value) => ({ ...value, items: result.items }));
+      notify("Complete quotation generated", "success");
+    },
+    onError: (error) => notify(error.message, "error"),
+  });
   function addProduct(product: Product) {
     setDraft((value) => {
       const key = idOf(product);
@@ -291,7 +390,12 @@ export default function QuotationBuilder() {
   function next() {
     if (step === 1 && !draft.customerId)
       return notify("Select a customer first", "error");
-    if (step === 2 && draft.items.length === 0)
+    if (step === 2 && !manualMode && !preview)
+      return notify(
+        "Choose the companies and generate the quotation first",
+        "error",
+      );
+    if (step === 2 && manualMode && draft.items.length === 0)
       return notify("Add at least one product or service", "error");
     setStep((value) => Math.min(4, value + 1));
   }
@@ -310,6 +414,10 @@ export default function QuotationBuilder() {
           }
         : { ...value, templateId: "" },
     );
+    if (template) {
+      setManualMode(true);
+      setPreview(null);
+    }
   }
   if (
     customers.isLoading ||
@@ -334,7 +442,7 @@ export default function QuotationBuilder() {
     );
   const steps = [
     "Customer & system",
-    "Products & services",
+    "Automatic design",
     "Commercial terms",
     "Review & send",
   ];
@@ -430,31 +538,67 @@ export default function QuotationBuilder() {
                     required
                   />
                 </Field>
-                <Field label="System size (kW)">
-                  <input
-                    className="input"
-                    type="number"
-                    min="0.1"
-                    step="0.1"
-                    value={draft.systemSize}
-                    onChange={(event) =>
-                      setDraft((value) => ({
-                        ...value,
-                        systemSize: Number(event.target.value),
-                      }))
-                    }
-                  />
+                <Field label="Nominal system size">
+                  <div className="capacity-input">
+                    <input
+                      className="input"
+                      type="number"
+                      min={draft.systemUnit === "MW" ? 0.001 : 0.1}
+                      max={draft.systemUnit === "MW" ? 5 : 5000}
+                      step={draft.systemUnit === "MW" ? 0.001 : 0.1}
+                      value={
+                        draft.systemUnit === "MW"
+                          ? draft.systemSize / 1000
+                          : draft.systemSize
+                      }
+                      onChange={(event) => {
+                        const entered = Number(event.target.value);
+                        setPreview(null);
+                        setDraft((value) => ({
+                          ...value,
+                          systemSize:
+                            value.systemUnit === "MW"
+                              ? entered * 1000
+                              : entered,
+                          items: manualMode ? value.items : [],
+                        }));
+                      }}
+                    />
+                    <select
+                      className="select"
+                      aria-label="System size unit"
+                      value={draft.systemUnit}
+                      onChange={(event) =>
+                        setDraft((value) => ({
+                          ...value,
+                          systemUnit: event.target.value as "kW" | "MW",
+                        }))
+                      }
+                    >
+                      <option value="kW">kW</option>
+                      <option value="MW">MW</option>
+                    </select>
+                  </div>
                 </Field>
                 <Field label="System type">
                   <select
                     className="select"
                     value={draft.systemType}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const systemType = event.target
+                        .value as Draft["systemType"];
+                      setPreview(null);
                       setDraft((value) => ({
                         ...value,
-                        systemType: event.target.value as Draft["systemType"],
-                      }))
-                    }
+                        systemType,
+                        includeBattery:
+                          systemType === "ongrid" ? value.includeBattery : true,
+                        panelBrand: "",
+                        inverterBrand: "",
+                        batteryBrand: "",
+                        items: manualMode ? value.items : [],
+                      }));
+                    }}
                   >
                     <option value="ongrid">On-grid</option>
                     <option value="hybrid">Hybrid</option>
@@ -477,140 +621,504 @@ export default function QuotationBuilder() {
           )}
           {step === 2 && (
             <>
-              <Card className="builder-card">
-                <div className="section-heading">
-                  <div>
-                    <span className="eyebrow">Step 2</span>
-                    <h2>Select products and services</h2>
-                    <p>
-                      Catalog prices remain editable for this customer-specific
-                      quotation.
-                    </p>
-                  </div>
-                </div>
-                <div className="search-box">
-                  <Search />
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search panels, inverters, batteries, labor…"
-                  />
-                </div>
-                <div className="builder-products">
-                  {filteredProducts.map((product) => (
-                    <button
-                      key={idOf(product)}
-                      onClick={() => addProduct(product)}
-                    >
-                      <span>
-                        {product.image ? (
-                          <img src={product.image} alt="" />
-                        ) : (
-                          <Sparkles />
-                        )}
-                      </span>
+              <div
+                className="builder-mode-switch"
+                role="group"
+                aria-label="Quotation design mode"
+              >
+                <button
+                  className={!manualMode ? "active" : ""}
+                  onClick={() => setManualMode(false)}
+                  disabled={!hasPermission("auto_quote_generate")}
+                >
+                  <WandSparkles /> Automatic design
+                </button>
+                <button
+                  className={manualMode ? "active" : ""}
+                  onClick={() => {
+                    setManualMode(true);
+                    setPreview(null);
+                  }}
+                >
+                  <Plus /> Manual builder
+                </button>
+              </div>
+              {!manualMode ? (
+                <>
+                  <Card className="builder-card">
+                    <div className="section-heading">
                       <div>
-                        <strong>{product.name}</strong>
-                        <small>
-                          {titleCase(product.category)} ·{" "}
-                          {money(product.unitPrice)}
-                        </small>
+                        <span className="eyebrow">Step 2</span>
+                        <h2>Choose equipment companies</h2>
+                        <p>
+                          The design engine will select compatible models and
+                          calculate every quantity.
+                        </p>
                       </div>
-                      <Plus />
-                    </button>
-                  ))}
-                </div>
-              </Card>
-              <Card className="builder-card">
-                <div className="section-heading">
-                  <div>
-                    <h2>Selected items</h2>
-                    <p>Adjust quantity and customer-specific rates.</p>
-                  </div>
-                  <Button
-                    tone="secondary"
-                    size="sm"
-                    onClick={() =>
-                      setDraft((value) => ({
-                        ...value,
-                        items: [
-                          ...value.items,
-                          {
-                            name: "Custom installation service",
-                            category: "service",
-                            unit: "job",
-                            quantity: 1,
-                            unitPrice: 0,
-                          },
-                        ],
-                      }))
-                    }
-                  >
-                    <Plus />
-                    Custom line
-                  </Button>
-                </div>
-                {draft.items.length ? (
-                  <div className="line-items">
-                    {draft.items.map((item, index) => (
-                      <div
-                        className="line-item"
-                        key={`${item.productId || item.name}-${index}`}
+                      <Badge tone="info">
+                        {draft.systemSize >= 1000
+                          ? `${draft.systemSize / 1000} MW`
+                          : `${draft.systemSize} kW`}
+                      </Badge>
+                    </div>
+                    {engineOptions.isLoading ? (
+                      <LoadingState label="Finding compatible equipment" />
+                    ) : engineOptions.error ? (
+                      <ErrorState
+                        error={engineOptions.error}
+                        retry={() => engineOptions.refetch()}
+                      />
+                    ) : (
+                      <div className="form-grid auto-design-form">
+                        <Field label="Solar panel company">
+                          <select
+                            className="select"
+                            value={draft.panelBrand}
+                            onChange={(event) => {
+                              setPreview(null);
+                              setDraft((value) => ({
+                                ...value,
+                                panelBrand: event.target.value,
+                                items: [],
+                              }));
+                            }}
+                          >
+                            <option value="">Select panel company</option>
+                            {(engineOptions.data?.panelBrands || []).map(
+                              (brand) => (
+                                <option key={brand}>{brand}</option>
+                              ),
+                            )}
+                          </select>
+                        </Field>
+                        <Field label="Inverter company">
+                          <select
+                            className="select"
+                            value={draft.inverterBrand}
+                            onChange={(event) => {
+                              setPreview(null);
+                              setDraft((value) => ({
+                                ...value,
+                                inverterBrand: event.target.value,
+                                items: [],
+                              }));
+                            }}
+                          >
+                            <option value="">Select inverter company</option>
+                            {(engineOptions.data?.inverterBrands || []).map(
+                              (brand) => (
+                                <option key={brand}>{brand}</option>
+                              ),
+                            )}
+                          </select>
+                        </Field>
+                        {draft.systemType === "ongrid" && (
+                          <Field label="Battery storage">
+                            <label className="toggle-row">
+                              <input
+                                type="checkbox"
+                                checked={draft.includeBattery}
+                                onChange={(event) => {
+                                  setPreview(null);
+                                  setDraft((value) => ({
+                                    ...value,
+                                    includeBattery: event.target.checked,
+                                    batteryBrand: event.target.checked
+                                      ? value.batteryBrand
+                                      : "",
+                                    items: [],
+                                  }));
+                                }}
+                              />
+                              <span>Add optional backup storage</span>
+                            </label>
+                          </Field>
+                        )}
+                        {(draft.systemType !== "ongrid" ||
+                          draft.includeBattery) && (
+                          <>
+                            <Field label="Battery company">
+                              <select
+                                className="select"
+                                value={draft.batteryBrand}
+                                onChange={(event) => {
+                                  setPreview(null);
+                                  setDraft((value) => ({
+                                    ...value,
+                                    batteryBrand: event.target.value,
+                                    items: [],
+                                  }));
+                                }}
+                              >
+                                <option value="">Select battery company</option>
+                                {(engineOptions.data?.batteryBrands || []).map(
+                                  (brand) => (
+                                    <option key={brand}>{brand}</option>
+                                  ),
+                                )}
+                              </select>
+                            </Field>
+                            <Field label="Essential backup load (kW)">
+                              <input
+                                className="input"
+                                type="number"
+                                min="0.1"
+                                step="0.1"
+                                value={draft.backupLoadKw}
+                                onChange={(event) => {
+                                  setPreview(null);
+                                  setDraft((value) => ({
+                                    ...value,
+                                    backupLoadKw: Number(event.target.value),
+                                    items: [],
+                                  }));
+                                }}
+                              />
+                            </Field>
+                            <Field label="Required backup (hours)">
+                              <input
+                                className="input"
+                                type="number"
+                                min="0.5"
+                                step="0.5"
+                                value={draft.backupHours}
+                                onChange={(event) => {
+                                  setPreview(null);
+                                  setDraft((value) => ({
+                                    ...value,
+                                    backupHours: Number(event.target.value),
+                                    items: [],
+                                  }));
+                                }}
+                              />
+                            </Field>
+                          </>
+                        )}
+                        <Field label="Roof assumption">
+                          <select
+                            className="select"
+                            value={draft.roofType}
+                            onChange={(event) => {
+                              setPreview(null);
+                              setDraft((value) => ({
+                                ...value,
+                                roofType: event.target.value,
+                                items: [],
+                              }));
+                            }}
+                          >
+                            <option value="rcc">RCC roof</option>
+                            <option value="metal-shed">Metal shed</option>
+                            <option value="ground-mount">Ground mount</option>
+                            <option value="other">
+                              Other / survey required
+                            </option>
+                          </select>
+                        </Field>
+                        <Field label="Prosumer scope">
+                          <label className="toggle-row">
+                            <input
+                              type="checkbox"
+                              checked={draft.prosumerIncluded}
+                              onChange={(event) => {
+                                setPreview(null);
+                                setDraft((value) => ({
+                                  ...value,
+                                  prosumerIncluded: event.target.checked,
+                                  items: [],
+                                }));
+                              }}
+                            />
+                            <span>Include application support</span>
+                          </label>
+                        </Field>
+                      </div>
+                    )}
+                    <div className="auto-generate-action">
+                      <Button
+                        onClick={() => generate.mutate()}
+                        disabled={generate.isPending || engineOptions.isLoading}
                       >
-                        <input
-                          className="input line-item__name"
-                          aria-label="Item name"
-                          value={item.name}
-                          onChange={(event) =>
-                            updateItem(index, { name: event.target.value })
-                          }
-                        />
-                        <label>
-                          Qty
-                          <input
-                            className="input"
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={item.quantity}
-                            onChange={(event) =>
-                              updateItem(index, {
-                                quantity: Number(event.target.value),
-                              })
-                            }
-                          />
-                        </label>
-                        <label>
-                          Rate
-                          <input
-                            className="input"
-                            type="number"
-                            min="0"
-                            value={item.unitPrice}
-                            onChange={(event) =>
-                              updateItem(index, {
-                                unitPrice: Number(event.target.value),
-                              })
-                            }
-                          />
-                        </label>
-                        <strong>{money(item.quantity * item.unitPrice)}</strong>
-                        <button
-                          onClick={() => removeItem(index)}
-                          aria-label={`Remove ${item.name}`}
-                        >
-                          <Trash2 />
-                        </button>
+                        <WandSparkles />{" "}
+                        {generate.isPending
+                          ? "Generating…"
+                          : preview
+                            ? "Regenerate quotation"
+                            : "Generate complete quotation"}
+                      </Button>
+                    </div>
+                  </Card>
+                  {preview && (
+                    <Card className="builder-card generated-preview">
+                      <div className="section-heading">
+                        <div>
+                          <span className="eyebrow">Generated design</span>
+                          <h2>{preview.design.actualDcKw} kW DC solar array</h2>
+                          <p>
+                            Review the automatically selected equipment and
+                            complete installation scope.
+                          </p>
+                        </div>
+                        <Badge tone="success">
+                          <CheckCircle2 /> Ready
+                        </Badge>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState
-                    title="No items selected"
-                    message="Choose products above or add a custom labor/service line."
-                  />
-                )}
-              </Card>
+                      <div className="design-metrics">
+                        <div>
+                          <Gauge />
+                          <span>
+                            Panels
+                            <strong>
+                              {preview.design.panelQuantity} ×{" "}
+                              {preview.design.panelWatts} W
+                            </strong>
+                            <small>{preview.design.panelModel}</small>
+                          </span>
+                        </div>
+                        <div>
+                          <Gauge />
+                          <span>
+                            Inverters
+                            <strong>
+                              {preview.design.inverterUnitKw > 0
+                                ? `${preview.design.inverterQuantity} × ${preview.design.inverterUnitKw} kW`
+                                : `${preview.design.inverterTotalKw} kW combined`}
+                            </strong>
+                            <small>{preview.design.inverterModel}</small>
+                          </span>
+                        </div>
+                        {preview.design.batteryQuantity > 0 && (
+                          <div>
+                            <Gauge />
+                            <span>
+                              Battery storage
+                              <strong>
+                                {preview.design.batteryUnitKwh > 0
+                                  ? `${preview.design.batteryQuantity} × ${preview.design.batteryUnitKwh} kWh`
+                                  : `${preview.design.batteryTotalKwh} kWh combined`}
+                              </strong>
+                              <small>{preview.design.batteryModel}</small>
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="line-items generated-items">
+                        {draft.items.map((item, index) => (
+                          <div
+                            className="line-item"
+                            key={`${item.productId || item.name}-${index}`}
+                          >
+                            <span className="generated-item-name">
+                              <strong>{item.name}</strong>
+                              <small>
+                                {item.description ||
+                                  (item.unitPrice === 0
+                                    ? "Included"
+                                    : "Automatically calculated")}
+                              </small>
+                            </span>
+                            <label>
+                              Qty
+                              <input
+                                className="input"
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={item.quantity}
+                                disabled={!hasPermission("auto_quote_override")}
+                                onChange={(event) =>
+                                  updateItem(index, {
+                                    quantity: Number(event.target.value),
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              Rate
+                              <input
+                                className="input"
+                                type="number"
+                                min="0"
+                                value={item.unitPrice}
+                                disabled={!hasPermission("auto_quote_override")}
+                                onChange={(event) =>
+                                  updateItem(index, {
+                                    unitPrice: Number(event.target.value),
+                                  })
+                                }
+                              />
+                            </label>
+                            <strong>
+                              {item.unitPrice === 0
+                                ? item.description?.includes("site survey")
+                                  ? "Site survey"
+                                  : "Included"
+                                : money(item.quantity * item.unitPrice)}
+                            </strong>
+                            {hasPermission("auto_quote_override") ? (
+                              <button
+                                onClick={() => removeItem(index)}
+                                aria-label={`Remove ${item.name}`}
+                              >
+                                <Trash2 />
+                              </button>
+                            ) : (
+                              <span />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="generation-assumptions">
+                        <strong>Engineering assumptions</strong>
+                        <ul>
+                          {preview.assumptions.map((assumption) => (
+                            <li key={assumption}>{assumption}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </Card>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Card className="builder-card">
+                    <div className="section-heading">
+                      <div>
+                        <span className="eyebrow">Step 2</span>
+                        <h2>Select products and services</h2>
+                        <p>
+                          Catalog prices remain editable for this
+                          customer-specific quotation.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="search-box">
+                      <Search />
+                      <input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Search panels, inverters, batteries, labor…"
+                      />
+                    </div>
+                    <div className="builder-products">
+                      {filteredProducts.map((product) => (
+                        <button
+                          key={idOf(product)}
+                          onClick={() => addProduct(product)}
+                        >
+                          <span>
+                            {product.image ? (
+                              <img src={product.image} alt="" />
+                            ) : (
+                              <Sparkles />
+                            )}
+                          </span>
+                          <div>
+                            <strong>{product.name}</strong>
+                            <small>
+                              {titleCase(product.category)} ·{" "}
+                              {money(product.unitPrice)}
+                            </small>
+                          </div>
+                          <Plus />
+                        </button>
+                      ))}
+                    </div>
+                  </Card>
+                  <Card className="builder-card">
+                    <div className="section-heading">
+                      <div>
+                        <h2>Selected items</h2>
+                        <p>Adjust quantity and customer-specific rates.</p>
+                      </div>
+                      <Button
+                        tone="secondary"
+                        size="sm"
+                        onClick={() =>
+                          setDraft((value) => ({
+                            ...value,
+                            items: [
+                              ...value.items,
+                              {
+                                name: "Custom installation service",
+                                category: "service",
+                                unit: "job",
+                                quantity: 1,
+                                unitPrice: 0,
+                              },
+                            ],
+                          }))
+                        }
+                      >
+                        <Plus />
+                        Custom line
+                      </Button>
+                    </div>
+                    {draft.items.length ? (
+                      <div className="line-items">
+                        {draft.items.map((item, index) => (
+                          <div
+                            className="line-item"
+                            key={`${item.productId || item.name}-${index}`}
+                          >
+                            <input
+                              className="input line-item__name"
+                              aria-label="Item name"
+                              value={item.name}
+                              onChange={(event) =>
+                                updateItem(index, { name: event.target.value })
+                              }
+                            />
+                            <label>
+                              Qty
+                              <input
+                                className="input"
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={item.quantity}
+                                onChange={(event) =>
+                                  updateItem(index, {
+                                    quantity: Number(event.target.value),
+                                  })
+                                }
+                              />
+                            </label>
+                            <label>
+                              Rate
+                              <input
+                                className="input"
+                                type="number"
+                                min="0"
+                                value={item.unitPrice}
+                                onChange={(event) =>
+                                  updateItem(index, {
+                                    unitPrice: Number(event.target.value),
+                                  })
+                                }
+                              />
+                            </label>
+                            <strong>
+                              {money(item.quantity * item.unitPrice)}
+                            </strong>
+                            <button
+                              onClick={() => removeItem(index)}
+                              aria-label={`Remove ${item.name}`}
+                            >
+                              <Trash2 />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        title="No items selected"
+                        message="Choose products above or add a custom labor/service line."
+                      />
+                    )}
+                  </Card>
+                </>
+              )}
             </>
           )}
           {step === 3 && (
@@ -821,7 +1329,11 @@ export default function QuotationBuilder() {
                         {item.quantity} × {money(item.unitPrice)}
                       </small>
                     </span>
-                    <strong>{money(item.quantity * item.unitPrice)}</strong>
+                    <strong>
+                      {item.unitPrice === 0
+                        ? "Included / survey"
+                        : money(item.quantity * item.unitPrice)}
+                    </strong>
                   </div>
                 ))}
               </div>

@@ -30,67 +30,56 @@ const escapeHtml = (value) =>
 router.post("/send-quotation", emailLimiter, async (req, res) => {
   try {
     if (!isObjectId(req.body.quotationId))
-      return res
-        .status(400)
-        .json({
-          error: {
-            code: "QUOTATION_INVALID",
-            message: "Select a valid quotation to email",
-          },
-        });
+      return res.status(400).json({
+        error: {
+          code: "QUOTATION_INVALID",
+          message: "Select a valid quotation to email",
+        },
+      });
     const quotation = await Quotation.findById(req.body.quotationId);
     if (!quotation)
-      return res
-        .status(404)
-        .json({
-          error: {
-            code: "QUOTATION_NOT_FOUND",
-            message: "Quotation not found",
-          },
-        });
+      return res.status(404).json({
+        error: {
+          code: "QUOTATION_NOT_FOUND",
+          message: "Quotation not found",
+        },
+      });
     const ownsQuotation = [quotation.createdBy, quotation.assignedTo].some(
       (value) => value?.toString() === req.user.id,
     );
     if (!hasPermission(req.user, "quotations_send_all") && !ownsQuotation) {
-      return res
-        .status(403)
-        .json({
-          error: {
-            code: "FORBIDDEN",
-            message: "You can email quotations assigned to you only",
-          },
-        });
+      return res.status(403).json({
+        error: {
+          code: "FORBIDDEN",
+          message: "You can email quotations assigned to you only",
+        },
+      });
     }
     const customer = await Customer.findById(quotation.customerId);
     if (!customer?.email || !/^\S+@\S+\.\S+$/.test(customer.email)) {
-      return res
-        .status(400)
-        .json({
-          error: {
-            code: "CUSTOMER_EMAIL_REQUIRED",
-            message:
-              "Add a valid email address to this customer before sending",
-          },
-        });
+      return res.status(400).json({
+        error: {
+          code: "CUSTOMER_EMAIL_REQUIRED",
+          message: "Add a valid email address to this customer before sending",
+        },
+      });
     }
     if (
       ["pending_approval", "rejected", "expired", "cancelled"].includes(
         quotation.status,
       )
     )
-      return res
-        .status(409)
-        .json({
-          error: {
-            code: "QUOTATION_NOT_SENDABLE",
-            message: `A ${quotation.status.replace("_", " ")} quotation cannot be emailed`,
-          },
-        });
+      return res.status(409).json({
+        error: {
+          code: "QUOTATION_NOT_SENDABLE",
+          message: `A ${quotation.status.replace("_", " ")} quotation cannot be emailed`,
+        },
+      });
 
     const itemRows = quotation.items
       .map(
         (item) =>
-          `<tr><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(item.name)}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right">PKR ${Number(item.unitPrice).toLocaleString("en-PK")}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right">PKR ${Number(item.total ?? item.quantity * item.unitPrice).toLocaleString("en-PK")}</td></tr>`,
+          `<tr><td style="padding:8px;border-bottom:1px solid #eee">${escapeHtml(item.name)}${item.description ? `<br><small style="color:#64748b">${escapeHtml(item.description)}</small>` : ""}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${escapeHtml(item.quantity)} ${escapeHtml(item.unit)}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${Number(item.unitPrice) === 0 ? "Included / survey" : `PKR ${Number(item.unitPrice).toLocaleString("en-PK")}`}</td><td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${Number(item.unitPrice) === 0 ? "Included / survey" : `PKR ${Number(item.total ?? item.quantity * item.unitPrice).toLocaleString("en-PK")}`}</td></tr>`,
       )
       .join("");
 
@@ -139,17 +128,15 @@ router.post("/send-quotation", emailLimiter, async (req, res) => {
     });
   } catch (error) {
     console.error("Quotation email send error:", error.message);
-    res
-      .status(502)
-      .json({
-        error: {
-          code: "EMAIL_DELIVERY_FAILED",
-          message:
-            process.env.NODE_ENV === "production"
-              ? "The email provider could not deliver this quotation. Try again shortly."
-              : error.message,
-        },
-      });
+    res.status(502).json({
+      error: {
+        code: "EMAIL_DELIVERY_FAILED",
+        message:
+          process.env.NODE_ENV === "production"
+            ? "The email provider could not deliver this quotation. Try again shortly."
+            : error.message,
+      },
+    });
   }
 });
 

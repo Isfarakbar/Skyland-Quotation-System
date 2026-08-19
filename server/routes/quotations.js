@@ -4,6 +4,7 @@ import { Customer } from "../models/Customer.js";
 import { hasPermission } from "../middleware/auth.js";
 import { isObjectId, pagination, paginated } from "../lib/api.js";
 import { writeAudit } from "../models/AuditLog.js";
+import { generateQuotationPreview } from "../services/quotation-engine.js";
 
 const router = express.Router();
 const fail = (res, status, code, message) =>
@@ -45,6 +46,67 @@ const normalizeQuotationBody = (source) => ({
   templateId: source.templateId || null,
   followUpAt: source.followUpAt || null,
 });
+
+const comparableItems = (items = []) =>
+  items.map((item) => ({
+    productId: String(item.productId || ""),
+    name: String(item.name || ""),
+    category: String(item.category || ""),
+    unit: String(item.unit || ""),
+    quantity: Number(item.quantity || 0),
+    unitPrice: Number(item.unitPrice || 0),
+  }));
+
+async function validateGeneratedQuotation(user, body) {
+  if (!body.generation?.input) return { body };
+  if (!hasPermission(user, "auto_quote_generate"))
+    return {
+      error: [403, "FORBIDDEN", "Automatic quotation access is required"],
+    };
+  const fresh = await generateQuotationPreview(body.generation.input);
+  if (body.generation.digest !== fresh.digest)
+    return {
+      error: [
+        409,
+        "AUTO_QUOTE_STALE",
+        "Catalog prices or sizing rules changed. Regenerate the quotation preview.",
+      ],
+      fresh,
+    };
+  const changed =
+    JSON.stringify(comparableItems(body.items)) !==
+    JSON.stringify(comparableItems(fresh.items));
+  if (changed && !hasPermission(user, "auto_quote_override"))
+    return {
+      error: [
+        403,
+        "AUTO_QUOTE_OVERRIDE_REQUIRED",
+        "You do not have access to change automatically calculated quantities or rates",
+      ],
+    };
+  return {
+    body: {
+      ...body,
+      items: changed ? body.items : fresh.items,
+      systemSize: fresh.input.systemSizeKw,
+      systemType: fresh.input.systemType,
+      generation: {
+        mode: "automatic",
+        engineVersion: fresh.engineVersion,
+        catalogVersion: fresh.catalogVersion,
+        rulesVersion: fresh.rulesVersion,
+        digest: fresh.digest,
+        input: fresh.input,
+        design: fresh.design,
+        assumptions: fresh.assumptions,
+        warnings: fresh.warnings,
+        manualOverrides: changed
+          ? { items: comparableItems(body.items), recordedAt: new Date() }
+          : null,
+      },
+    },
+  };
+}
 
 function validateCommercialTerms(body) {
   const taxRate = Number(body.taxRate || 0);
@@ -192,7 +254,12 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  const body = normalizeQuotationBody(req.body);
+  const generated = await validateGeneratedQuotation(
+    req.user,
+    normalizeQuotationBody(req.body),
+  );
+  if (generated.error) return fail(res, ...generated.error);
+  const body = generated.body;
   if (body.templateId && !isObjectId(body.templateId))
     return fail(
       res,
@@ -287,7 +354,12 @@ router.put("/:id", async (req, res) => {
       "QUOTATION_IMMUTABLE",
       "Create a new revision before changing a finalized quotation",
     );
-  const body = normalizeQuotationBody(req.body);
+  const generated = await validateGeneratedQuotation(
+    req.user,
+    normalizeQuotationBody(req.body),
+  );
+  if (generated.error) return fail(res, ...generated.error);
+  const body = generated.body;
   if (body.templateId && !isObjectId(body.templateId))
     return fail(
       res,
@@ -538,7 +610,8 @@ router.patch("/:id/status", async (req, res) => {
   const next = req.body.status;
   if (
     (quotation.status === "draft" && next === "pending_approval") ||
-    (quotation.status === "pending_approval" && ["approved", "rejected"].includes(next))
+    (quotation.status === "pending_approval" &&
+      ["approved", "rejected"].includes(next))
   )
     return fail(
       res,

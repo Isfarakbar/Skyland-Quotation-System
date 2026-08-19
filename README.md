@@ -14,7 +14,7 @@
 ## 🌟 Key Highlights & Features
 
 - 📊 **Account-Scoped Cloud Data**: Express and MongoDB remain the source of truth. React Query caches safe reads in memory, cancels stale requests, and clears all account data at logout.
-- ⚡ **Pakistan-Focused Quotation Builder**: Select multiple panels, inverters, batteries, accessories, labour and services; capture DISCO, sanctioned load, meter phase, roof type and site survey; then calculate discounts, configurable taxes, totals and per-watt rates.
+- ⚡ **Capacity-Driven Quotation Generator**: Enter 10 kW, 50 kW, 1 MW, or another nominal size, choose equipment companies, and automatically calculate panel quantities, compatible inverter combinations, battery storage, installation BOQ, and commercial totals. A permission-controlled manual builder remains available.
 - 🛠️ **Complete Installation Scope**: Add structure, protection, cabling, earthing, labour, design, testing, commissioning, transport and optional prosumer/DISCO coordination in one click.
 - 🤝 **Commercial Controls**: Configurable payment milestones, delivery timeline, product and workmanship warranties, regulatory notes, and server-verified totals.
 - 🔐 **Individual Team Access**: Super Admins can grant or revoke product editing/deletion, price-list access, customer and quotation management, proposal sending, and quotation settings for each manager or employee independently. Changes invalidate existing sessions immediately.
@@ -33,6 +33,7 @@
 ## 🛠️ Tech Stack
 
 ### **Frontend**
+
 - **Core**: React 19, TypeScript, React Router, TanStack Query, React Hook Form, Zod and Radix UI
 - **Build Tool**: Vite v6
 - **Routing**: Browser history routes with Vercel SPA fallback; the prior UI remains available temporarily with `?ui=legacy`
@@ -40,6 +41,7 @@
 - **Caching**: Account-scoped in-memory query cache with timeouts, request cancellation, deduplication and safe retries
 
 ### **Backend & Database**
+
 - **Runtime**: Node.js
 - **Framework**: Express v5
 - **Database**: MongoDB Atlas Cloud
@@ -92,12 +94,12 @@ graph TB
 
 ## 📸 Application Preview
 
-| Dashboard & Stats | Product Catalog |
-|:---:|:---:|
+|                 Dashboard & Stats                 |                  Product Catalog                   |
+| :-----------------------------------------------: | :------------------------------------------------: |
 | Animated metrics, revenue pipeline, recent quotes | Category filtering, search, unit price & rate/watt |
 
-| 5-Step Quotation Builder | Rates Management |
-|:---:|:---:|
+|                        5-Step Quotation Builder                        |           Rates Management           |
+| :--------------------------------------------------------------------: | :----------------------------------: |
 | Project profile, equipment, installation scope, commercials & proposal | Weekly panel & inverter rate updates |
 
 ---
@@ -147,6 +149,7 @@ Skyland Quotation System/
 ## 🚀 Quick Start (Local Setup)
 
 ### **Prerequisites**
+
 - Node.js v18+ and npm installed
 - MongoDB Atlas Database URI
 - Brevo API Key (Optional, for email dispatch)
@@ -154,18 +157,21 @@ Skyland Quotation System/
 ### **Installation**
 
 1. **Clone Repository**
+
    ```bash
    git clone https://github.com/Isfarakbar/Skyland-Quotation-System.git
    cd Skyland-Quotation-System
    ```
 
 2. **Install Dependencies**
+
    ```bash
    npm install
    ```
 
 3. **Configure Environment Variables**
    Create a `.env` file in the root directory:
+
    ```env
    MONGODB_URI=your_mongodb_atlas_connection_string
    BREVO_API_KEY=your_brevo_api_key
@@ -194,7 +200,7 @@ This repository is pre-configured with `vercel.json` and `api/index.js` for zero
 1. Import the repository into [Vercel](https://vercel.com).
 2. Add every required value from `.env.example` in Vercel project settings. Authentication uses hashed opaque sessions in MongoDB; no client-readable JWT secret is required.
 3. Set `BOOTSTRAP_ON_START=1` only for the first controlled deployment, sign in with the bootstrap super-admin account, then remove both `BOOTSTRAP_ON_START` and `SUPER_ADMIN_PASSWORD` and redeploy.
-4. Run `npm run migrate:dry` against a backed-up production database, review the record counts, then run `npm run migrate:apply` once. The migration is idempotent and verifies that quotation, customer and product counts do not change.
+4. Run `npm run migrate:dry` against a backed-up production database, review the record counts, then run `npm run migrate:apply` once. The migration is idempotent, backfills automatic-sizing metadata, and adds missing supported equipment without deleting existing records.
 5. Rotate any Cloudinary or authentication secrets that have ever been pasted into a chat or committed elsewhere. Store replacement secrets only in Vercel environment settings and redeploy to invalidate old sessions.
 
 The application has four roles: `super_admin`, `admin`, `manager`, and `employee`. Public signup only permits manager and employee requests; neither can sign in until the super admin approves the registration.
@@ -218,17 +224,20 @@ The React interface is the default. Add `?ui=legacy` to a URL during the transit
 
 ## 📄 API Reference
 
-| Method | Endpoint | Description |
-|:---|:---|:---|
-| `GET` | `/api/products` | Retrieve all product catalog items |
-| `POST` | `/api/products` | Create a new product |
-| `PUT` | `/api/products/:id` | Update product details or price |
-| `DELETE` | `/api/products/:id` | Remove product |
-| `GET` | `/api/customers` | Fetch customer directory |
-| `POST` | `/api/customers` | Add new customer record |
-| `GET` | `/api/quotations` | List all quotations |
-| `POST` | `/api/quotations` | Save new quotation proposal |
-| `POST` | `/api/email/send-quotation` | Dispatch proposal via Brevo Email API |
+| Method    | Endpoint                        | Description                                             |
+| :-------- | :------------------------------ | :------------------------------------------------------ |
+| `GET`     | `/api/products`                 | Retrieve all product catalog items                      |
+| `POST`    | `/api/products`                 | Create a new product                                    |
+| `PUT`     | `/api/products/:id`             | Update product details or price                         |
+| `DELETE`  | `/api/products/:id`             | Remove product                                          |
+| `GET`     | `/api/customers`                | Fetch customer directory                                |
+| `POST`    | `/api/customers`                | Add new customer record                                 |
+| `GET`     | `/api/quotations`               | List all quotations                                     |
+| `POST`    | `/api/quotations`               | Save new quotation proposal                             |
+| `GET`     | `/api/quotation-engine/options` | List compatible panel, inverter, and battery companies  |
+| `POST`    | `/api/quotation-engine/preview` | Generate a server-validated automatic quotation preview |
+| `GET/PUT` | `/api/quotation-engine/rules`   | Read or manage protected sizing and BOQ rules           |
+| `POST`    | `/api/email/send-quotation`     | Dispatch proposal via Brevo Email API                   |
 
 ---
 

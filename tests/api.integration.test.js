@@ -759,3 +759,154 @@ test("paginated catalog responses and quotation approval revisions are available
   assert.equal(revision.status, 201);
   assert.equal(revision.data.revision, 2);
 });
+
+test("capacity engine generates 10 kW, 50 kW, 1 MW, and battery quotations", async () => {
+  const cookie = await login("superadmin@skyland.test");
+  const preview = async (body) =>
+    request("/api/quotation-engine/preview", {
+      method: "POST",
+      cookie,
+      body,
+    });
+  const common = {
+    systemType: "ongrid",
+    panelBrand: "JA Solar",
+    inverterBrand: "Huawei",
+    includeBattery: false,
+    batteryBrand: "",
+    backupLoadKw: 0,
+    backupHours: 0,
+    roofType: "rcc",
+    prosumerIncluded: false,
+  };
+  const ten = await preview({ ...common, systemSizeKw: 10 });
+  assert.equal(ten.status, 200, JSON.stringify(ten.data));
+  assert.equal(ten.data.design.panelQuantity, 18);
+  assert.equal(ten.data.design.actualDcKw, 10.53);
+  assert.equal(ten.data.design.inverterQuantity, 1);
+  assert.equal(ten.data.design.inverterUnitKw, 10);
+  assert.ok(
+    ten.data.items.some((item) => item.name.includes("Mounting Structure")),
+  );
+  assert.ok(
+    ten.data.items.some((item) => item.description.includes("site survey")),
+  );
+  const options = await request(
+    "/api/quotation-engine/options?systemSizeKw=10&systemType=ongrid",
+    { cookie },
+  );
+  assert.equal(options.status, 200);
+  assert.ok(options.data.inverterBrands.includes("Huawei"));
+  assert.ok(!options.data.inverterBrands.includes("GoodWe"));
+
+  const fifty = await preview({ ...common, systemSizeKw: 50 });
+  assert.equal(fifty.status, 200, JSON.stringify(fifty.data));
+  assert.equal(fifty.data.design.inverterQuantity, 1);
+  assert.equal(fifty.data.design.inverterUnitKw, 50);
+
+  const megawatt = await preview({ ...common, systemSizeKw: 1000 });
+  assert.equal(megawatt.status, 200, JSON.stringify(megawatt.data));
+  assert.equal(megawatt.data.design.panelQuantity, 1710);
+  assert.equal(megawatt.data.design.inverterQuantity, 9);
+  assert.equal(megawatt.data.design.inverterUnitKw, 115);
+
+  const hybrid = await preview({
+    ...common,
+    systemSizeKw: 50,
+    systemType: "hybrid",
+    inverterBrand: "GoodWe",
+    includeBattery: true,
+    batteryBrand: "Soluna",
+    backupLoadKw: 10,
+    backupHours: 2,
+  });
+  assert.equal(hybrid.status, 200, JSON.stringify(hybrid.data));
+  assert.equal(hybrid.data.design.requiredBatteryKwh, 25.731);
+  assert.equal(hybrid.data.design.batteryQuantity, 1);
+  assert.equal(hybrid.data.design.batteryUnitKwh, 32);
+
+  const customer = await request("/api/customers", {
+    method: "POST",
+    cookie,
+    body: {
+      name: "Automatic Design Customer",
+      phone: "03007777777",
+      city: "Lahore",
+    },
+  });
+  const saved = await request("/api/quotations", {
+    method: "POST",
+    cookie,
+    body: {
+      quotationNumber: `SLE-AUTO-${Date.now()}`,
+      customerId: customer.data.id,
+      systemSize: 10,
+      systemType: "ongrid",
+      items: ten.data.items,
+      discount: 0,
+      discountType: "percent",
+      taxRate: 0,
+      generation: { input: ten.data.input, digest: ten.data.digest },
+    },
+  });
+  assert.equal(saved.status, 201, JSON.stringify(saved.data));
+  assert.equal(saved.data.generation.mode, "automatic");
+  assert.equal(saved.data.generation.design.panelQuantity, 18);
+
+  const stale = await request("/api/quotations", {
+    method: "POST",
+    cookie,
+    body: {
+      quotationNumber: `SLE-STALE-${Date.now()}`,
+      customerId: customer.data.id,
+      systemSize: 10,
+      systemType: "ongrid",
+      items: ten.data.items,
+      discount: 0,
+      discountType: "percent",
+      taxRate: 0,
+      generation: { input: ten.data.input, digest: "outdated-preview" },
+    },
+  });
+  assert.equal(stale.status, 409);
+  assert.equal(stale.data.error.code, "AUTO_QUOTE_STALE");
+
+  const employeeCookie = await login("employee@skyland.test");
+  const denied = await request("/api/quotation-engine/preview", {
+    method: "POST",
+    cookie: employeeCookie,
+    body: { ...common, systemSizeKw: 10 },
+  });
+  assert.equal(denied.status, 403);
+
+  const managerCookie = await login("pending.manager@skyland.test");
+  const managerCustomer = await request("/api/customers", {
+    method: "POST",
+    cookie: managerCookie,
+    body: {
+      name: "Manager Automatic Customer",
+      phone: "03006666666",
+      city: "Lahore",
+    },
+  });
+  const tamperedItems = ten.data.items.map((item, index) =>
+    index === 0 ? { ...item, quantity: item.quantity + 1 } : item,
+  );
+  const overrideDenied = await request("/api/quotations", {
+    method: "POST",
+    cookie: managerCookie,
+    body: {
+      quotationNumber: `SLE-OVERRIDE-${Date.now()}`,
+      customerId: managerCustomer.data.id,
+      systemSize: 10,
+      systemType: "ongrid",
+      items: tamperedItems,
+      discount: 0,
+      discountType: "percent",
+      taxRate: 0,
+      generation: { input: ten.data.input, digest: ten.data.digest },
+    },
+  });
+  assert.equal(overrideDenied.status, 403);
+  assert.equal(overrideDenied.data.error.code, "AUTO_QUOTE_OVERRIDE_REQUIRED");
+});

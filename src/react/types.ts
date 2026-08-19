@@ -1,5 +1,5 @@
-export type Role = 'super_admin' | 'admin' | 'manager' | 'employee';
-export type UserStatus = 'pending' | 'active' | 'suspended' | 'rejected';
+export type Role = "super_admin" | "admin" | "manager" | "employee";
+export type UserStatus = "pending" | "active" | "suspended" | "rejected";
 
 export interface User {
   id: string;
@@ -44,8 +44,23 @@ export interface Product {
   image?: string;
   active?: boolean;
   effectiveFrom?: string;
-  priceHistory?: { unitPrice: number; pricePerWatt?: number; changedAt?: string }[];
+  priceHistory?: {
+    unitPrice: number;
+    pricePerWatt?: number;
+    changedAt?: string;
+  }[];
   createdAt?: string;
+  inverterType?: string;
+  autoSizing?: {
+    enabled?: boolean;
+    capacityValue?: number;
+    capacityUnit?: string;
+    supportedSystemTypes?: string[];
+    phase?: string;
+    minSystemKw?: number;
+    maxSystemKw?: number;
+    priority?: number;
+  };
 }
 
 export interface Customer {
@@ -77,7 +92,16 @@ export interface QuoteItem {
   isOptional?: boolean;
 }
 
-export type QuoteStatus = 'draft' | 'pending_approval' | 'approved' | 'sent' | 'viewed' | 'accepted' | 'rejected' | 'expired' | 'cancelled';
+export type QuoteStatus =
+  | "draft"
+  | "pending_approval"
+  | "approved"
+  | "sent"
+  | "viewed"
+  | "accepted"
+  | "rejected"
+  | "expired"
+  | "cancelled";
 
 export interface Quotation {
   id: string;
@@ -86,11 +110,11 @@ export interface Quotation {
   customerId: string;
   templateId?: string;
   systemSize: number;
-  systemType: 'ongrid' | 'hybrid' | 'offgrid';
+  systemType: "ongrid" | "hybrid" | "offgrid";
   items: QuoteItem[];
   subtotal: number;
   discount: number;
-  discountType: 'percent' | 'fixed';
+  discountType: "percent" | "fixed";
   taxRate: number;
   taxAmount: number;
   grandTotal: number;
@@ -106,10 +130,72 @@ export interface Quotation {
   validityDays?: number;
   installationDays?: number;
   paymentSchedule?: { label: string; percent: number }[];
+  generation?: EngineGenerationSnapshot | null;
 }
 
-export interface PageMeta { page: number; limit: number; total: number; pages: number }
-export interface PageResult<T> { items: T[]; meta: PageMeta }
+export interface EngineInput {
+  systemSizeKw: number;
+  systemType: "ongrid" | "hybrid" | "offgrid";
+  panelBrand: string;
+  inverterBrand: string;
+  includeBattery: boolean;
+  batteryBrand: string;
+  backupLoadKw: number;
+  backupHours: number;
+  roofType: string;
+  prosumerIncluded: boolean;
+}
+
+export interface EngineDesign {
+  requestedAcKw: number;
+  panelModel: string;
+  panelWatts: number;
+  panelQuantity: number;
+  actualDcKw: number;
+  inverterModel: string;
+  inverterUnitKw: number;
+  inverterQuantity: number;
+  inverterTotalKw: number;
+  inverterBreakdown?: { model: string; capacity: number; quantity: number }[];
+  requiredBatteryKwh: number;
+  batteryModel: string;
+  batteryUnitKwh: number;
+  batteryQuantity: number;
+  batteryTotalKwh: number;
+  batteryBreakdown?: { model: string; capacity: number; quantity: number }[];
+}
+
+export interface EnginePreview {
+  engineVersion: string;
+  catalogVersion: string;
+  rulesVersion: string;
+  digest: string;
+  input: EngineInput;
+  design: EngineDesign;
+  items: QuoteItem[];
+  subtotal: number;
+  assumptions: string[];
+  warnings: string[];
+}
+
+export interface EngineGenerationSnapshot extends Omit<
+  EnginePreview,
+  "items" | "subtotal"
+> {
+  mode?: "automatic";
+  manualOverrides?: unknown;
+}
+
+export interface PageMeta {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+export interface PageResult<T> {
+  items: T[];
+  meta: PageMeta;
+}
 
 export interface ApiProblem {
   code: string;
